@@ -341,8 +341,8 @@ export default function App() {
     addLog(`Exported selected ${type} data as Excel .xls format`);
   };
 
-  // Handle Create Order
-  const handleCreateOrder = (e) => {
+  // --- HANDLE CREATE ORDER (UPDATED WITH BACKEND API POST) ---
+  const handleCreateOrder = async (e) => {
     e.preventDefault();
     if (!newOrder.vendorId || newOrder.items.length === 0) return;
 
@@ -361,14 +361,6 @@ export default function App() {
         discount: Number(it.discount) || 0
       };
     });
-
-    setItems(prev => prev.map(item => {
-      const ordered = newOrder.items.find(i => i.itemId === item.id);
-      if (ordered) {
-        return { ...item, quantity: Math.max(0, item.quantity - Number(ordered.qty)) };
-      }
-      return item;
-    }));
 
     const createdOrder = {
       id: `TN-ORD-${Math.floor(1000 + Math.random() * 9000)}`,
@@ -392,9 +384,34 @@ export default function App() {
       updatedBy: currentUser?.name || 'Staff'
     };
 
-    setOrders([createdOrder, ...orders]);
-    addLog(`Created new order ${createdOrder.id} for Vendor ${newOrder.vendorId}`);
-    setShowOrderModal(false);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/orders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(createdOrder)
+      });
+
+      if (response.ok) {
+        setOrders([createdOrder, ...orders]);
+
+        setItems(prev => prev.map(item => {
+          const ordered = newOrder.items.find(i => i.itemId === item.id);
+          if (ordered) {
+            return { ...item, quantity: Math.max(0, item.quantity - Number(ordered.qty)) };
+          }
+          return item;
+        }));
+
+        addLog(`Created new order ${createdOrder.id} for Vendor ${newOrder.vendorId}`);
+        setShowOrderModal(false);
+      } else {
+        const errData = await response.json();
+        alert('Order သိမ်းဆည်းရာတွင် အမှားဖြစ်သွားပါသည်: ' + (errData.error || 'Unknown error'));
+      }
+    } catch (err) {
+      console.error('API Error:', err);
+      alert('Backend ဆီသို့ ချိတ်ဆက်၍မရပါ။ Server ဖွင့်ထားခြင်း ရှိမရှိ စစ်ဆေးပါ။');
+    }
   };
 
   const handleUpdateOrderStatus = (orderId, newStatus, newTracking) => {
@@ -1698,10 +1715,10 @@ export default function App() {
               <button onClick={() => setShowItemModal(false)} className="text-slate-400 hover:text-slate-600 text-lg">✕</button>
             </div>
 
-            <form onSubmit={(e) => {
+            <form onSubmit={async (e) => {
               e.preventDefault();
               const vendorCode = newItem.vendorId === 'VND-101' ? 'A' : 'B';
-              const autoSku = `SKU-VEND-${vendorCode}-${Math.floor(1000 + Math.random() * 9000)}`;
+              const autoSku = `SKU-VND-${vendorCode}-${Math.floor(1000 + Math.random() * 9000)}`;
 
               const itemObj = {
                 id: `ITM-${Math.floor(100 + Math.random() * 900)}`,
@@ -1718,9 +1735,26 @@ export default function App() {
                 storeChargePerDay: Number(newItem.storeChargePerDay),
                 freeDays: Number(newItem.freeDays)
               };
-              setItems([itemObj, ...items]);
-              addLog(`Added new stock item ${itemObj.name} with auto SKU ${autoSku}`);
-              setShowItemModal(false);
+
+              try {
+                const response = await fetch(`${API_BASE_URL}/api/items`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(itemObj)
+                });
+
+                if (response.ok) {
+                  setItems([itemObj, ...items]);
+                  addLog(`Added new stock item ${itemObj.name} with auto SKU ${autoSku}`);
+                  setShowItemModal(false);
+                } else {
+                  const errData = await response.json();
+                  alert('Item သိမ်းဆည်းရာတွင် အမှားဖြစ်သွားပါသည်: ' + (errData.error || 'Unknown error'));
+                }
+              } catch (err) {
+                console.error('API Error:', err);
+                alert('Backend ဆီသို့ ချိတ်ဆက်၍မရပါ။');
+              }
             }} className="space-y-3 text-xs">
               
               <div>
