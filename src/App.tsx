@@ -86,13 +86,11 @@ const INITIAL_LOGS = [
 ];
 
 export default function App() {
-  // --- AUTHENTICATION & USERS STATE ---
   const [usersList, setUsersList] = useState(INITIAL_USERS);
   const [currentUser, setCurrentUser] = useState(null);
   const [loginInput, setLoginInput] = useState({ username: '', password: '' });
   const [loginError, setLoginError] = useState('');
 
-  // --- NAVIGATION & TABS ---
   const [activeTab, setActiveTab] = useState('dashboard');
   
   const [vendors, setVendors] = useState(INITIAL_VENDORS);
@@ -101,22 +99,18 @@ export default function App() {
   const [returns, setReturns] = useState(INITIAL_RETURNS);
   const [logs, setLogs] = useState(INITIAL_LOGS);
 
-  // Search & Filters
   const [searchTerm, setSearchTerm] = useState('');
   const [vendorFilter, setVendorFilter] = useState('ALL');
 
-  // Selection States for Selective Excel Export
   const [selectedOrderIds, setSelectedOrderIds] = useState([]);
   const [selectedItemIds, setSelectedItemIds] = useState([]);
   const [selectedReturnIds, setSelectedReturnIds] = useState([]);
 
-  // Chart State Controls (Odoo Style)
   const [chartMetric, setChartMetric] = useState('qty');
   const [chartType, setChartType] = useState('line');
   const [sortOrder, setSortOrder] = useState('desc');
   const [hoveredPoint, setHoveredPoint] = useState(null);
 
-  // Modals
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [showVoucherModal, setShowVoucherModal] = useState(false);
@@ -124,7 +118,6 @@ export default function App() {
   const [showUserModal, setShowUserModal] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
 
-  // Form States
   const [newUser, setNewUser] = useState({ username: '', password: '', name: '', role: 'Staff', vendorId: '' });
   const [newItem, setNewItem] = useState({ 
     vendorId: '', 
@@ -149,7 +142,6 @@ export default function App() {
     items: [{ itemId: '', qty: 1, discount: 0 }]
   });
 
-  // --- BACKEND API FETCH ---
   useEffect(() => {
     async function fetchData() {
       try {
@@ -171,7 +163,6 @@ export default function App() {
     fetchData();
   }, []);
 
-  // Action Logging Helper
   const addLog = (actionText) => {
     if (!currentUser) return;
     const newLog = {
@@ -184,7 +175,6 @@ export default function App() {
     setLogs(prev => [newLog, ...prev]);
   };
 
-  // Handle Login
   const handleLogin = (e) => {
     e.preventDefault();
     const found = usersList.find(u => u.username === loginInput.username && u.password === loginInput.password);
@@ -201,7 +191,6 @@ export default function App() {
     }
   };
 
-  // Role Scoping
   const scopedItems = useMemo(() => {
     if (currentUser && currentUser.role === 'Vendor') {
       return items.filter(i => i.vendorId === currentUser.vendorId);
@@ -222,31 +211,29 @@ export default function App() {
     return orders;
   }, [orders, currentUser, vendorFilter]);
 
-  // --- STATS CALCULATIONS ---
   const stats = useMemo(() => {
     const totalOrders = scopedOrders.length;
     const pendingOrders = scopedOrders.filter(o => o.status === 'Pending' || o.status === 'In-Transit').length;
     const deliveredOrders = scopedOrders.filter(o => o.status === 'Delivered').length;
-    const totalCodCollected = scopedOrders.filter(o => o.codCollected && !o.cancelled).reduce((sum, o) => sum + o.totalCod, 0);
-    const totalTnRevenue = scopedOrders.filter(o => !o.cancelled).reduce((sum, o) => sum + o.tnHandlingFee + o.tnStoreFee, 0);
-    const totalStockValue = scopedItems.reduce((sum, i) => sum + (i.quantity * i.cost), 0);
+    const totalCodCollected = scopedOrders.filter(o => o.codCollected && !o.cancelled).reduce((sum, o) => sum + (Number(o.totalCod) || 0), 0);
+    const totalTnRevenue = scopedOrders.filter(o => !o.cancelled).reduce((sum, o) => sum + (Number(o.tnHandlingFee) || 0) + (Number(o.tnStoreFee) || 0), 0);
+    const totalStockValue = scopedItems.reduce((sum, i) => sum + ((Number(i.quantity) || 0) * (Number(i.cost) || 0)), 0);
 
     return { totalOrders, pendingOrders, deliveredOrders, totalCodCollected, totalTnRevenue, totalStockValue };
   }, [scopedOrders, scopedItems]);
 
-  // Chart Data Preparation (Odoo Style)
   const chartData = useMemo(() => {
     let result = vendors.map(v => {
       const vItems = items.filter(i => i.vendorId === v.id);
-      const qty = vItems.reduce((sum, i) => sum + i.quantity, 0);
-      const val = vItems.reduce((sum, i) => sum + (i.quantity * i.price), 0);
+      const qty = vItems.reduce((sum, i) => sum + (Number(i.quantity) || 0), 0);
+      const val = vItems.reduce((sum, i) => sum + ((Number(i.quantity) || 0) * (Number(i.price) || 0)), 0);
       const store = vItems.reduce((sum, i) => sum + calculateStoreCharge(i), 0);
       return { id: v.id, name: v.name, qty, val, store };
     });
 
     result.sort((a, b) => {
-      const valA = a[chartMetric];
-      const valB = b[chartMetric];
+      const valA = a[chartMetric] || 0;
+      const valB = b[chartMetric] || 0;
       return sortOrder === 'asc' ? valA - valB : valB - valA;
     });
 
@@ -254,10 +241,9 @@ export default function App() {
   }, [items, vendors, chartMetric, sortOrder]);
 
   const maxChartValue = useMemo(() => {
-    return Math.max(...chartData.map(d => d[chartMetric]), 1);
+    return Math.max(...chartData.map(d => Number(d[chartMetric]) || 0), 1);
   }, [chartData, chartMetric]);
 
-  // Calculate Overdue Store Charges
   function calculateStoreCharge(item) {
     const vendor = vendors.find(v => v.id === item.vendorId);
     if (!vendor) return 0;
@@ -271,12 +257,11 @@ export default function App() {
 
     if (diffDays > freeDays) {
       const extraDays = diffDays - freeDays;
-      return extraDays * dailyFee * item.quantity;
+      return extraDays * dailyFee * (Number(item.quantity) || 0);
     }
     return 0;
   }
 
-  // Handle Create / Edit User
   const handleSaveUser = (e) => {
     e.preventDefault();
     if (!newUser.username) return;
@@ -309,7 +294,6 @@ export default function App() {
     setNewUser({ username: '', password: '', name: '', role: 'Staff', vendorId: '' });
   };
 
-  // Delete User
   const handleDeleteUser = (userId) => {
     if (confirm('ဤ User အကောင့်ကို ဖျက်ရန် သေချာပါသလား?')) {
       setUsersList(usersList.filter(u => u.id !== userId));
@@ -317,7 +301,6 @@ export default function App() {
     }
   };
 
-  // SELECTIVE EXCEL (.xls) EXPORT HELPER
   const exportSelectedToExcel = (type, dataList, selectedIds) => {
     const targetData = selectedIds.length > 0 
       ? dataList.filter(item => selectedIds.includes(item.id))
@@ -341,7 +324,6 @@ export default function App() {
     addLog(`Exported selected ${type} data as Excel .xls format`);
   };
 
-  // --- HANDLE CREATE ORDER (UPDATED WITH BACKEND API POST) ---
   const handleCreateOrder = async (e) => {
     e.preventDefault();
     if (!newOrder.vendorId || newOrder.items.length === 0) return;
@@ -350,13 +332,13 @@ export default function App() {
     let itemTotal = 0;
     const orderItems = newOrder.items.map(it => {
       const itemData = items.find(i => i.id === it.itemId);
-      const price = itemData ? itemData.price : 0;
-      const lineTotal = (price - (Number(it.discount) || 0)) * Number(it.qty);
+      const price = itemData ? (Number(itemData.price) || 0) : 0;
+      const lineTotal = (price - (Number(it.discount) || 0)) * (Number(it.qty) || 1);
       itemTotal += lineTotal;
       return {
         itemId: it.itemId,
         name: itemData ? itemData.name : 'Unknown Item',
-        qty: Number(it.qty),
+        qty: Number(it.qty) || 1,
         price: price,
         discount: Number(it.discount) || 0
       };
@@ -374,8 +356,8 @@ export default function App() {
       cancelled: false,
       items: orderItems,
       itemTotal: itemTotal,
-      deliveryFee: Number(newOrder.deliveryFee),
-      totalCod: itemTotal + Number(newOrder.deliveryFee),
+      deliveryFee: Number(newOrder.deliveryFee) || 0,
+      totalCod: itemTotal + (Number(newOrder.deliveryFee) || 0),
       tnHandlingFee: selectedVendor ? selectedVendor.handlingFee : 500,
       tnStoreFee: 0,
       codCollected: false,
@@ -397,7 +379,7 @@ export default function App() {
         setItems(prev => prev.map(item => {
           const ordered = newOrder.items.find(i => i.itemId === item.id);
           if (ordered) {
-            return { ...item, quantity: Math.max(0, item.quantity - Number(ordered.qty)) };
+            return { ...item, quantity: Math.max(0, (Number(item.quantity) || 0) - (Number(ordered.qty) || 1)) };
           }
           return item;
         }));
@@ -448,7 +430,6 @@ export default function App() {
     }
   };
 
-  // --- LOGIN VIEW ---
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 font-sans">
@@ -510,7 +491,6 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans">
       
-      {/* HEADER & NAVBAR */}
       <header className="bg-slate-900 text-white sticky top-0 z-30 shadow-md">
         <div className="max-w-7xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-4">
           <div className="flex items-center space-x-3">
@@ -542,7 +522,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* NAVIGATION TABS */}
         <div className="bg-slate-800 border-t border-slate-700 px-4">
           <div className="max-w-7xl mx-auto flex space-x-1 overflow-x-auto text-xs font-medium py-2">
             {[
@@ -578,10 +557,8 @@ export default function App() {
         </div>
       </header>
 
-      {/* MAIN CONTENT AREA */}
       <main className="flex-grow max-w-7xl w-full mx-auto p-4 md:p-6 space-y-6">
 
-        {/* --- DASHBOARD TAB --- */}
         {activeTab === 'dashboard' && (
           <div className="space-y-6">
             
@@ -601,7 +578,7 @@ export default function App() {
                 <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
                   <div>
                     <p className="text-xs font-semibold text-slate-500 uppercase">Total COD Collected</p>
-                    <p className="text-2xl font-bold text-emerald-600 mt-1">{stats.totalCodCollected.toLocaleString()} Ks</p>
+                    <p className="text-2xl font-bold text-emerald-600 mt-1">{(stats.totalCodCollected || 0).toLocaleString()} Ks</p>
                     <p className="text-xs text-slate-400 mt-1">Delivered Waybills</p>
                   </div>
                   <div className="bg-emerald-50 p-3 rounded-lg text-emerald-600">
@@ -612,7 +589,7 @@ export default function App() {
                 <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
                   <div>
                     <p className="text-xs font-semibold text-slate-500 uppercase">My Stock Capital Value</p>
-                    <p className="text-2xl font-bold text-slate-800 mt-1">{stats.totalStockValue.toLocaleString()} Ks</p>
+                    <p className="text-2xl font-bold text-slate-800 mt-1">{(stats.totalStockValue || 0).toLocaleString()} Ks</p>
                     <p className="text-xs text-slate-400 mt-1">In T&N Warehouse</p>
                   </div>
                   <div className="bg-amber-50 p-3 rounded-lg text-amber-600">
@@ -636,7 +613,7 @@ export default function App() {
                 <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
                   <div>
                     <p className="text-xs font-semibold text-slate-500 uppercase">Total COD Collected</p>
-                    <p className="text-2xl font-bold text-emerald-600 mt-1">{stats.totalCodCollected.toLocaleString()} Ks</p>
+                    <p className="text-2xl font-bold text-emerald-600 mt-1">{(stats.totalCodCollected || 0).toLocaleString()} Ks</p>
                     <p className="text-xs text-slate-400 mt-1">For Vendors & Delivery</p>
                   </div>
                   <div className="bg-emerald-50 p-3 rounded-lg text-emerald-600">
@@ -647,7 +624,7 @@ export default function App() {
                 <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
                   <div>
                     <p className="text-xs font-semibold text-slate-500 uppercase">T&N Revenue (Fees)</p>
-                    <p className="text-2xl font-bold text-indigo-600 mt-1">{stats.totalTnRevenue.toLocaleString()} Ks</p>
+                    <p className="text-2xl font-bold text-indigo-600 mt-1">{(stats.totalTnRevenue || 0).toLocaleString()} Ks</p>
                     <p className="text-xs text-slate-400 mt-1">Handling + Store Charges</p>
                   </div>
                   <div className="bg-indigo-50 p-3 rounded-lg text-indigo-600">
@@ -658,7 +635,7 @@ export default function App() {
                 <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
                   <div>
                     <p className="text-xs font-semibold text-slate-500 uppercase">Vendor Stock Value</p>
-                    <p className="text-2xl font-bold text-slate-800 mt-1">{stats.totalStockValue.toLocaleString()} Ks</p>
+                    <p className="text-2xl font-bold text-slate-800 mt-1">{(stats.totalStockValue || 0).toLocaleString()} Ks</p>
                     <p className="text-xs text-slate-400 mt-1">Total capital in warehouse</p>
                   </div>
                   <div className="bg-amber-50 p-3 rounded-lg text-amber-600">
@@ -668,7 +645,6 @@ export default function App() {
               </div>
             )}
 
-            {/* ODOO STYLE ANALYTICS CHART CONTROL (HIDDEN FOR VENDOR) */}
             {currentUser.role !== 'Vendor' && (
               <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
                 
@@ -743,8 +719,8 @@ export default function App() {
                       <p className="font-bold text-indigo-300">{hoveredPoint.name}</p>
                       <p className="text-slate-300">
                         {chartMetric === 'qty' ? `Stock Qty: ${hoveredPoint.qty} Units` :
-                         chartMetric === 'val' ? `Selling Value: ${hoveredPoint.val.toLocaleString()} Ks` :
-                         `Store Charges: ${hoveredPoint.store.toLocaleString()} Ks`}
+                         chartMetric === 'val' ? `Selling Value: ${(hoveredPoint.val || 0).toLocaleString()} Ks` :
+                         `Store Charges: ${(hoveredPoint.store || 0).toLocaleString()} Ks`}
                       </p>
                     </div>
                   )}
@@ -752,7 +728,7 @@ export default function App() {
                   {chartType === 'line' && (
                     <div className="h-44 w-full flex items-end justify-between gap-4 border-b border-indigo-100 pb-2 relative">
                       {chartData.map((d) => {
-                        const heightPct = Math.max(15, (d[chartMetric] / maxChartValue) * 100);
+                        const heightPct = Math.max(15, ((d[chartMetric] || 0) / maxChartValue) * 100);
                         return (
                           <div 
                             key={d.id} 
@@ -761,7 +737,7 @@ export default function App() {
                             className="flex-1 flex flex-col items-center group cursor-pointer z-10"
                           >
                             <div className="text-[10px] font-bold text-indigo-600 mb-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                              {d[chartMetric].toLocaleString()}
+                              {(d[chartMetric] || 0).toLocaleString()}
                             </div>
                             <div 
                               className="w-3 h-3 bg-indigo-600 rounded-full border-2 border-white shadow group-hover:scale-150 transition-transform"
@@ -777,7 +753,7 @@ export default function App() {
                   {chartType === 'bar' && (
                     <div className="h-44 flex items-end justify-around gap-4 border-b pb-2">
                       {chartData.map(d => {
-                        const heightPct = Math.max(10, (d[chartMetric] / maxChartValue) * 100);
+                        const heightPct = Math.max(10, ((d[chartMetric] || 0) / maxChartValue) * 100);
                         return (
                           <div 
                             key={d.id}
@@ -785,7 +761,7 @@ export default function App() {
                             onMouseLeave={() => setHoveredPoint(null)}
                             className="flex-1 flex flex-col items-center group cursor-pointer"
                           >
-                            <span className="text-[10px] font-bold text-indigo-600 mb-1">{d[chartMetric].toLocaleString()}</span>
+                            <span className="text-[10px] font-bold text-indigo-600 mb-1">{(d[chartMetric] || 0).toLocaleString()}</span>
                             <div 
                               className="w-full max-w-[60px] bg-indigo-500 group-hover:bg-indigo-600 rounded-t-lg transition-all shadow-md"
                               style={{ height: `${heightPct}%` }}
@@ -800,12 +776,12 @@ export default function App() {
                   {chartType === 'pie' && (
                     <div className="p-2 space-y-3">
                       {chartData.map(d => {
-                        const pct = Math.round((d[chartMetric] / maxChartValue) * 100);
+                        const pct = Math.round(((d[chartMetric] || 0) / maxChartValue) * 100);
                         return (
                           <div key={d.id} className="space-y-1">
                             <div className="flex justify-between text-xs font-medium">
                               <span>{d.name}</span>
-                              <span className="font-bold text-indigo-600">{d[chartMetric].toLocaleString()} ({pct}%)</span>
+                              <span className="font-bold text-indigo-600">{(d[chartMetric] || 0).toLocaleString()} ({pct}%)</span>
                             </div>
                             <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
                               <div className="bg-indigo-600 h-full rounded-full transition-all duration-500" style={{ width: `${pct}%` }}></div>
@@ -832,8 +808,8 @@ export default function App() {
                             <tr key={d.id} className="hover:bg-slate-50">
                               <td className="p-2.5 font-bold text-slate-800">{d.name}</td>
                               <td className="p-2.5 font-semibold text-indigo-600">{d.qty} Units</td>
-                              <td className="p-2.5 text-slate-700">{d.val.toLocaleString()} Ks</td>
-                              <td className="p-2.5 text-amber-600 font-bold">{d.store.toLocaleString()} Ks</td>
+                              <td className="p-2.5 text-slate-700">{(d.val || 0).toLocaleString()} Ks</td>
+                              <td className="p-2.5 text-amber-600 font-bold">{(d.store || 0).toLocaleString()} Ks</td>
                             </tr>
                           ))}
                         </tbody>
@@ -913,7 +889,7 @@ export default function App() {
                               {ord.status}
                             </span>
                           </td>
-                          <td className="p-2 font-semibold">{ord.totalCod.toLocaleString()} Ks</td>
+                          <td className="p-2 font-semibold">{(Number(ord.totalCod) || 0).toLocaleString()} Ks</td>
                         </tr>
                       ))}
                     </tbody>
@@ -925,7 +901,6 @@ export default function App() {
           </div>
         )}
 
-        {/* --- ORDERS & VOUCHERS TAB (WITH SELECTIVE EXCEL EXPORT) --- */}
         {activeTab === 'orders' && (
           <div className="space-y-4">
             
@@ -1028,7 +1003,7 @@ export default function App() {
                               <p className="text-slate-500 font-mono text-[11px]">Trk: {order.trackingNo}</p>
                             </td>
                             <td className="p-3 font-bold text-slate-800">
-                              {order.totalCod.toLocaleString()} Ks
+                              {(Number(order.totalCod) || 0).toLocaleString()} Ks
                             </td>
                             <td className="p-3">
                               <select 
@@ -1074,7 +1049,6 @@ export default function App() {
           </div>
         )}
 
-        {/* --- VENDOR INVENTORY & STOCK CONTROL TAB (WITH SELECTIVE EXCEL EXPORT) --- */}
         {activeTab === 'inventory' && (
           <div className="space-y-4">
             
@@ -1167,12 +1141,12 @@ export default function App() {
                           </td>
                           <td className="p-3 text-slate-600 font-medium">{vendor ? vendor.name : item.vendorId}</td>
                           <td className="p-3">
-                            <p className="font-semibold text-slate-800">{item.price.toLocaleString()} Ks</p>
-                            <p className="text-[10px] text-slate-400">Cost: {item.cost.toLocaleString()} Ks</p>
+                            <p className="font-semibold text-slate-800">{(Number(item.price) || 0).toLocaleString()} Ks</p>
+                            <p className="text-[10px] text-slate-400">Cost: {(Number(item.cost) || 0).toLocaleString()} Ks</p>
                           </td>
                           <td className="p-3">
                             <span className={`px-2 py-0.5 rounded font-bold ${
-                              item.quantity < 5 ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-800'
+                              (Number(item.quantity) || 0) < 5 ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-800'
                             }`}>
                               {item.quantity} pcs
                             </span>
@@ -1195,7 +1169,7 @@ export default function App() {
                                   const qty = prompt("Enter stock quantity to return to vendor:");
                                   if (qty && !isNaN(Number(qty))) {
                                     const numQty = Number(qty);
-                                    setItems(prev => prev.map(i => i.id === item.id ? { ...i, quantity: Math.max(0, i.quantity - numQty) } : i));
+                                    setItems(prev => prev.map(i => i.id === item.id ? { ...i, quantity: Math.max(0, (Number(i.quantity) || 0) - numQty) } : i));
                                     setReturns(prev => [{
                                       id: `RET-${Date.now().toString().slice(-3)}`,
                                       itemId: item.id,
@@ -1226,7 +1200,6 @@ export default function App() {
           </div>
         )}
 
-        {/* --- RETURNS & DAMAGE MANAGEMENT TAB (WITH SELECTIVE EXCEL EXPORT) --- */}
         {activeTab === 'returns' && (
           <div className="space-y-4">
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
@@ -1312,7 +1285,6 @@ export default function App() {
           </div>
         )}
 
-        {/* --- FINANCIAL SETTLEMENT & BILLING MODULE TAB (COD & BILLING WITH EXCEL EXPORT) --- */}
         {activeTab === 'settlements' && currentUser.role !== 'Vendor' && (
           <div className="space-y-4">
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
@@ -1335,8 +1307,8 @@ export default function App() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {vendors.map(vendor => {
                 const vendorOrders = orders.filter(o => o.vendorId === vendor.id && o.status === 'Delivered' && !o.cancelled);
-                const totalCodCollected = vendorOrders.reduce((sum, o) => sum + o.totalCod, 0);
-                const totalHandlingFee = vendorOrders.reduce((sum, o) => sum + o.tnHandlingFee, 0);
+                const totalCodCollected = vendorOrders.reduce((sum, o) => sum + (Number(o.totalCod) || 0), 0);
+                const totalHandlingFee = vendorOrders.reduce((sum, o) => sum + (Number(o.tnHandlingFee) || 0), 0);
                 
                 const vendorItems = items.filter(i => i.vendorId === vendor.id);
                 const totalStoreCharge = vendorItems.reduce((sum, i) => sum + calculateStoreCharge(i), 0);
@@ -1391,7 +1363,6 @@ export default function App() {
           </div>
         )}
 
-        {/* --- VENDORS MANAGEMENT TAB --- */}
         {activeTab === 'vendors' && (
           <div className="space-y-4">
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
@@ -1431,7 +1402,6 @@ export default function App() {
           </div>
         )}
 
-        {/* --- USER MANAGEMENT TAB (ADD & EDIT) --- */}
         {activeTab === 'users' && currentUser.role === 'Admin' && (
           <div className="space-y-4">
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
@@ -1509,7 +1479,6 @@ export default function App() {
           </div>
         )}
 
-        {/* --- ACTION LOGS TAB --- */}
         {activeTab === 'logs' && currentUser.role === 'Admin' && (
           <div className="space-y-4">
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
@@ -1563,7 +1532,6 @@ export default function App() {
 
       </main>
 
-      {/* --- CREATE ORDER MODAL --- */}
       {showOrderModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
@@ -1706,7 +1674,6 @@ export default function App() {
         </div>
       )}
 
-      {/* --- ADD ITEM MODAL --- */}
       {showItemModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
@@ -1844,7 +1811,6 @@ export default function App() {
         </div>
       )}
 
-      {/* --- CREATE / EDIT USER MODAL --- */}
       {showUserModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
@@ -1921,7 +1887,6 @@ export default function App() {
         </div>
       )}
 
-      {/* --- VOUCHER PRINT MODAL --- */}
       {showVoucherModal && selectedOrder && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl max-w-sm w-full p-6 shadow-2xl space-y-4 text-xs font-mono text-slate-800 border border-slate-200">
@@ -1961,7 +1926,7 @@ export default function App() {
                     <tr key={i}>
                       <td className="py-1">{it.name}</td>
                       <td className="py-1 text-center">{it.qty}</td>
-                      <td className="py-1 text-right">{((it.price - it.discount) * it.qty).toLocaleString()} Ks</td>
+                      <td className="py-1 text-right">{(((Number(it.price) || 0) - (Number(it.discount) || 0)) * (Number(it.qty) || 1)).toLocaleString()} Ks</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1971,15 +1936,15 @@ export default function App() {
             <div className="space-y-1 text-right">
               <div className="flex justify-between text-slate-500">
                 <span>Items Subtotal:</span>
-                <span>{selectedOrder.itemTotal.toLocaleString()} Ks</span>
+                <span>{(Number(selectedOrder.itemTotal) || 0).toLocaleString()} Ks</span>
               </div>
               <div className="flex justify-between text-slate-500">
                 <span>Delivery Fee:</span>
-                <span>{selectedOrder.deliveryFee.toLocaleString()} Ks</span>
+                <span>{(Number(selectedOrder.deliveryFee) || 0).toLocaleString()} Ks</span>
               </div>
               <div className="flex justify-between font-extrabold text-sm text-slate-900 border-t pt-1">
                 <span>Total COD to Pay:</span>
-                <span className="text-indigo-600">{selectedOrder.totalCod.toLocaleString()} Ks</span>
+                <span className="text-indigo-600">{(Number(selectedOrder.totalCod) || 0).toLocaleString()} Ks</span>
               </div>
             </div>
 
@@ -2013,7 +1978,6 @@ export default function App() {
         </div>
       )}
 
-      {/* FOOTER */}
       <footer className="bg-white border-t border-slate-200 py-3 text-center text-xs text-slate-500 mt-auto">
         T&N Fulfillment System • Supported by T&N
       </footer>
