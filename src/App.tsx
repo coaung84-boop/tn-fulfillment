@@ -8,10 +8,8 @@ import {
   PieChart, Table, ArrowUpDown, UserPlus, CheckSquare, Square
 } from 'lucide-react';
 
-// --- BACKEND API BASE URL ---
 const API_BASE_URL = 'https://tn-backend-j1vg.onrender.com';
 
-// --- INITIAL DATABASE STATE ---
 const INITIAL_USERS = [
   { id: 'USR-001', username: "admin", password: "admin123", name: "System Admin", role: "Admin", vendorId: "" },
   { id: 'USR-002', username: "staff", password: "staff123", name: "Operations Staff", role: "Staff", vendorId: "" },
@@ -396,37 +394,86 @@ export default function App() {
     }
   };
 
-  const handleUpdateOrderStatus = (orderId, newStatus, newTracking) => {
+  // Status ပြောင်းလဲမှုကို Backend API သို့ တိုက်ရိုက် PUT လုပ်ခြင်း
+  const handleUpdateOrderStatus = async (orderId, newStatus, newTracking) => {
     const targetOrder = orders.find(o => o.id === orderId);
     if (targetOrder && targetOrder.status === 'Delivered' && currentUser?.role !== 'Admin') {
       alert('မေတ္တာရပ်ခံချက်: Delivered ဖြစ်ပြီးသား စာရင်းများကို Admin သာ ပြင်ဆင်ခွင့်ရှိပါသည်။');
       return;
     }
 
-    setOrders(prev => prev.map(o => {
-      if (o.id === orderId) {
-        const isDelivered = newStatus === 'Delivered';
-        return {
-          ...o,
-          status: newStatus,
-          trackingNo: newTracking || o.trackingNo,
-          codCollected: isDelivered ? true : o.codCollected,
-          updatedBy: currentUser?.name || 'Staff'
-        };
+    const isDelivered = newStatus === 'Delivered';
+    const updatedFields = {
+      status: newStatus,
+      trackingNo: newTracking || targetOrder.trackingNo,
+      cancelled: targetOrder.cancelled,
+      codCollected: isDelivered ? true : targetOrder.codCollected,
+      updatedBy: currentUser?.name || 'Staff'
+    };
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/orders/${orderId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedFields)
+      });
+
+      if (response.ok) {
+        setOrders(prev => prev.map(o => {
+          if (o.id === orderId) {
+            return {
+              ...o,
+              status: newStatus,
+              trackingNo: updatedFields.trackingNo,
+              codCollected: updatedFields.codCollected,
+              updatedBy: updatedFields.updatedBy
+            };
+          }
+          return o;
+        }));
+        addLog(`Updated Order ${orderId} status to '${newStatus}'`);
+      } else {
+        const errData = await response.json();
+        alert('Order Update ရန် အမှားဖြစ်သွားပါသည်: ' + (errData.error || 'Unknown error'));
       }
-      return o;
-    }));
-    addLog(`Updated Order ${orderId} status to '${newStatus}'`);
+    } catch (err) {
+      console.error('API Error:', err);
+      alert('Backend ချိတ်ဆက်မှု အမှားရှိပါသည်။');
+    }
   };
 
-  const handleCancelVoucher = (orderId) => {
+  // Voucher Cancel လုပ်ခြင်းကို Backend API သို့ တိုက်ရိုက် PUT လုပ်ခြင်း
+  const handleCancelVoucher = async (orderId) => {
     if (currentUser?.role !== 'Admin') {
       alert('ခွင့်ပြုချက်မရှိပါ: Voucher များကို Cancel လုပ်ရန် Admin အဆင့် လိုအပ်ပါသည်။');
       return;
     }
     if (confirm(`Voucher ${orderId} ကို Cancel လုပ်ရန် သေချာပါသလား?`)) {
-      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, cancelled: true, status: 'Cancelled' } : o));
-      addLog(`Admin cancelled Voucher ${orderId}`);
+      const targetOrder = orders.find(o => o.id === orderId);
+      const updatedFields = {
+        status: 'Cancelled',
+        trackingNo: targetOrder.trackingNo,
+        cancelled: true,
+        codCollected: targetOrder.codCollected,
+        updatedBy: currentUser?.name || 'Admin'
+      };
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/orders/${orderId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatedFields)
+        });
+
+        if (response.ok) {
+          setOrders(prev => prev.map(o => o.id === orderId ? { ...o, cancelled: true, status: 'Cancelled' } : o));
+          addLog(`Admin cancelled Voucher ${orderId}`);
+        } else {
+          alert('Voucher Cancel လုပ်ရာတွင် အမှားဖြစ်သွားပါသည်');
+        }
+      } catch (err) {
+        console.error('API Error:', err);
+      }
     }
   };
 
