@@ -862,7 +862,24 @@ export default function App() {
                         <div className="border-b border-dashed border-slate-400 w-full"></div>
                         <div className="border-b border-dashed border-slate-400 w-full"></div>
                       </div>
-                      {chartData.map((d, idx) => {
+                      
+                      {/* SVG connecting line overlay */}
+                      <svg className="absolute inset-0 w-full h-full pointer-events-none px-6" style={{ overflow: 'visible' }}>
+                        <polyline
+                          fill="none"
+                          stroke="#4f46e5"
+                          strokeWidth="3"
+                          points={chartData.map((d, idx) => {
+                            const totalCount = chartData.length;
+                            const x = (idx / (Math.max(1, totalCount - 1))) * 100;
+                            const heightPct = Math.max(15, ((d[chartMetric] || 0) / maxChartValue) * 100);
+                            const y = 160 - (heightPct * 1.3);
+                            return `${x}%,${y}`;
+                          }).join(' ')}
+                        />
+                      </svg>
+
+                      {chartData.map((d) => {
                         const heightPct = Math.max(15, ((d[chartMetric] || 0) / maxChartValue) * 100);
                         return (
                           <div 
@@ -872,7 +889,7 @@ export default function App() {
                             className="flex-1 flex flex-col items-center justify-end group cursor-pointer z-10 h-full"
                           >
                             <span className="text-[10px] font-bold text-indigo-600 mb-2">{(d[chartMetric] || 0).toLocaleString()}</span>
-                            <div className="w-3 h-3 bg-indigo-600 rounded-full border-2 border-white shadow-md group-hover:scale-150 transition-transform mb-2"></div>
+                            <div className="w-3.5 h-3.5 bg-indigo-600 rounded-full border-2 border-white shadow-md group-hover:scale-150 transition-transform mb-2"></div>
                             <span className="text-xs font-semibold text-slate-700 truncate max-w-[100px]">{d.name}</span>
                           </div>
                         );
