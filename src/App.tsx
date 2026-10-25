@@ -122,10 +122,8 @@ export default function App() {
   const [editingUser, setEditingUser] = useState(null);
 
   const [newUser, setNewUser] = useState({ username: '', password: '', name: '', role: 'Staff', vendorId: '' });
-  // Vendor Form without handling fee / daily fee
   const [newVendor, setNewVendor] = useState({ name: '', phone: '', address: '', bankAccount: '' });
 
-  // Add Stock Item State (Supports Existing Item Restock or New Item Creation)
   const [isExistingItemMode, setIsExistingItemMode] = useState(true);
   const [newItem, setNewItem] = useState({ 
     vendorId: '', 
@@ -421,6 +419,19 @@ export default function App() {
 
       if (response.ok) {
         setOrders([createdOrder, ...orders]);
+
+        // Update item quantities in backend as well so refresh doesn't revert them
+        for (const ordered of newOrder.items) {
+          const targetItem = items.find(i => i.id === ordered.itemId);
+          if (targetItem) {
+            const newQty = Math.max(0, (Number(targetItem.quantity) || 0) - (Number(ordered.qty) || 1));
+            await fetch(`${API_BASE_URL}/api/items/${targetItem.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ quantity: newQty })
+            });
+          }
+        }
 
         setItems(prev => prev.map(item => {
           const ordered = newOrder.items.find(i => i.itemId === item.id);
@@ -1612,7 +1623,7 @@ export default function App() {
 
       </main>
 
-      {/* Return Stock Modal with Qty & Reason */}
+      {/* Return Stock Modal */}
       {showReturnModal && targetReturnItem && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4">
@@ -1669,19 +1680,40 @@ export default function App() {
                     };
 
                     try {
-                      const res = await fetch(`${API_BASE_URL}/api/returns`, {
+                      // 1. Save Return record to backend API
+                      const resReturn = await fetch(`${API_BASE_URL}/api/returns`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(newReturnObj)
                       });
-                      if (res.ok) {
-                        setItems(prev => prev.map(i => i.id === targetReturnItem.id ? { ...i, quantity: Math.max(0, (Number(i.quantity) || 0) - numQty) } : i));
-                        setReturns(prev => [newReturnObj, ...prev]);
-                        addLog(`Returned ${numQty} pcs of ${targetReturnItem.name} to Vendor. Reason: ${returnForm.reason}`);
-                        setShowReturnModal(false);
+
+                      if (!resReturn.ok) {
+                        const err = await resReturn.json();
+                        alert('Return သိမ်းဆည်းရာတွင် အမှားဖြစ်သွားပါသည်: ' + (err.error || 'Unknown error'));
+                        return;
                       }
+
+                      // 2. Update item quantity in backend API
+                      const newQty = Math.max(0, (Number(targetReturnItem.quantity) || 0) - numQty);
+                      const resItem = await fetch(`${API_BASE_URL}/api/items/${targetReturnItem.id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ quantity: newQty })
+                      });
+
+                      if (!resItem.ok) {
+                        alert('ပစ္စည်း Stock အရေအတွက် Update လုပ်ရာတွင် အမှားဖြစ်သွားပါသည်။');
+                        return;
+                      }
+
+                      // 3. Update local state
+                      setItems(prev => prev.map(i => i.id === targetReturnItem.id ? { ...i, quantity: newQty } : i));
+                      setReturns(prev => [newReturnObj, ...prev]);
+                      addLog(`Returned ${numQty} pcs of ${targetReturnItem.name} to Vendor. Reason: ${returnForm.reason}`);
+                      setShowReturnModal(false);
                     } catch (err) {
                       console.error('Return API Error:', err);
+                      alert('Server ချိတ်ဆက်မှု အမှားရှိပါသည်။');
                     }
                   }}
                   className="w-1/2 bg-rose-600 hover:bg-rose-700 text-white py-2.5 rounded-lg font-semibold"
@@ -1694,7 +1726,7 @@ export default function App() {
         </div>
       )}
 
-      {/* New Order Modal with Customer Memory (Auto-fill) */}
+      {/* New Order Modal */}
       {showOrderModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
@@ -1837,7 +1869,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Add Stock Item Modal (Vendor selection filters item dropdown, no capital cost) */}
+      {/* Add Stock Item Modal */}
       {showItemModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
@@ -1872,10 +1904,24 @@ export default function App() {
                   return;
                 }
                 const addQty = Number(newItem.quantity) || 0;
-                const updatedItems = items.map(i => i.id === targetExisting.id ? { ...i, quantity: (Number(i.quantity) || 0) + addQty } : i);
-                setItems(updatedItems);
-                addLog(`Restocked ${addQty} pcs to existing item ${targetExisting.name}`);
-                setShowItemModal(false);
+                const newQty = (Number(targetExisting.quantity) || 0) + addQty;
+
+                try {
+                  const res = await fetch(`${API_BASE_URL}/api/items/${targetExisting.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ quantity: newQty })
+                  });
+                  if (res.ok) {
+                    setItems(items.map(i => i.id === targetExisting.id ? { ...i, quantity: newQty } : i));
+                    addLog(`Restocked ${addQty} pcs to existing item ${targetExisting.name}`);
+                    setShowItemModal(false);
+                  } else {
+                    alert('Restock လုပ်ရာတွင် အမှားဖြစ်သွားပါသည်။');
+                  }
+                } catch (err) {
+                  console.error('Restock Error:', err);
+                }
               } else {
                 if (!newItem.vendorId || !newItem.name) {
                   alert('Vendor နှင့် ပစ္စည်းနာမည် ထည့်ရန် လိုအပ်ပါသည်။');
@@ -1890,7 +1936,7 @@ export default function App() {
                   name: newItem.name,
                   category: newItem.category || 'General',
                   price: Number(newItem.price) || 0,
-                  cost: 0, // Capital cost removed
+                  cost: 0,
                   quantity: Number(newItem.quantity) || 0,
                   damagedQty: 0,
                   stockInDate: new Date().toISOString().split('T')[0],
@@ -1936,7 +1982,7 @@ export default function App() {
 
               {isExistingItemMode ? (
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Select Existing Item (Filtered by Vendor) *</label>
+                  <label className="block font-semibold text-slate-700 mb-1">Select Existing Item *</label>
                   <select 
                     required value={newItem.existingItemId}
                     onChange={(e) => {
@@ -2027,7 +2073,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Register New Vendor Modal (Vendor shop name type='text', fees removed) */}
+      {/* Register New Vendor Modal */}
       {showVendorModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
