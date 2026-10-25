@@ -424,7 +424,7 @@ export default function App() {
       itemTotal: itemTotal,
       deliveryFee: Number(newOrder.deliveryFee) || 0,
       totalCod: itemTotal + (Number(newOrder.deliveryFee) || 0),
-      tnHandlingFee: 500,
+      tnHandlingFee: 500, // Counting handling fee from Pending status onwards
       tnStoreFee: 0,
       codCollected: false,
       settlementStatus: 'Pending',
@@ -482,10 +482,11 @@ export default function App() {
     }
 
     const isDelivered = newStatus === 'Delivered';
+    const isCancelled = newStatus === 'Cancelled';
     const updatedFields = {
       status: newStatus,
       trackingNo: newTracking || targetOrder.trackingNo,
-      cancelled: targetOrder.cancelled,
+      cancelled: isCancelled ? true : targetOrder.cancelled,
       codCollected: isDelivered ? true : targetOrder.codCollected,
       updatedBy: currentUser?.name || 'Staff'
     };
@@ -504,6 +505,7 @@ export default function App() {
               ...o,
               status: newStatus,
               trackingNo: updatedFields.trackingNo,
+              cancelled: updatedFields.cancelled,
               codCollected: updatedFields.codCollected,
               updatedBy: updatedFields.updatedBy
             };
@@ -518,6 +520,40 @@ export default function App() {
     } catch (err) {
       console.error('API Error:', err);
       alert('Backend ချိတ်ဆက်မှု အမှားရှိပါသည်။');
+    }
+  };
+
+  const handleCancelVoucher = async (orderId) => {
+    if (currentUser?.role !== 'Admin') {
+      alert('ခွင့်ပြုချက်မရှိပါ: Voucher များကို Cancel လုပ်ရန် Admin အဆင့် လိုအပ်ပါသည်။');
+      return;
+    }
+    if (confirm(`Voucher ${orderId} ကို Cancel လုပ်ရန် သေချာပါသလား?`)) {
+      const targetOrder = orders.find(o => o.id === orderId);
+      const updatedFields = {
+        status: 'Cancelled',
+        trackingNo: targetOrder.trackingNo,
+        cancelled: true,
+        codCollected: targetOrder.codCollected,
+        updatedBy: currentUser?.name || 'Admin'
+      };
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/orders/${orderId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatedFields)
+        });
+
+        if (response.ok) {
+          setOrders(prev => prev.map(o => o.id === orderId ? { ...o, cancelled: true, status: 'Cancelled' } : o));
+          addLog(`Admin cancelled Voucher ${orderId}`);
+        } else {
+          alert('Voucher Cancel လုပ်ရာတွင် အမှားဖြစ်သွားပါသည်');
+        }
+      } catch (err) {
+        console.error('API Error:', err);
+      }
     }
   };
 
@@ -716,7 +752,7 @@ export default function App() {
                   <div>
                     <p className="text-xs font-semibold text-slate-500 uppercase">T&N Revenue (Fees)</p>
                     <p className="text-2xl font-bold text-indigo-600 mt-1">{(stats.totalTnRevenue || 0).toLocaleString()} Ks</p>
-                    <p className="text-xs text-slate-400 mt-1">Handling + Store Charges</p>
+                    <p className="text-xs text-slate-400 mt-1">Handling (Pending onwards) + Store</p>
                   </div>
                   <div className="bg-indigo-50 p-3 rounded-lg text-indigo-600">
                     <Tag className="w-6 h-6" />
@@ -938,14 +974,14 @@ export default function App() {
                       onClick={() => { setActiveTab('orders'); setShowOrderModal(true); }}
                       className="w-full text-left px-4 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-semibold flex items-center justify-between transition-colors"
                     >
-                      <span>+ Create New Order & Voucher</span>
+                      <span>Create New Order & Voucher</span>
                       <ChevronRight className="w-4 h-4" />
                     </button>
                     <button 
                       onClick={() => { setActiveTab('inventory'); setShowItemModal(true); }}
                       className="w-full text-left px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center justify-between transition-colors"
                     >
-                      <span>+ Add Stock / Item for Vendor</span>
+                      <span>Add Stock / Item for Vendor</span>
                       <ChevronRight className="w-4 h-4" />
                     </button>
                     <button 
@@ -1407,7 +1443,7 @@ export default function App() {
               <div>
                 <h3 className="font-bold text-slate-800 text-sm">Vendor Financial Settlements (COD vs Fees)</h3>
                 <p className="text-xs text-slate-500 mt-1">
-                  Direct COD flow balance: (Total Delivered COD) - (T&N Handling Fee + Store Charges)
+                  Handling fees calculated from Pending status onwards (excluding cancelled orders). Net balance = Delivered COD - Handling Fees (Pending/Active) - Store Charges.
                 </p>
               </div>
 
@@ -1422,9 +1458,11 @@ export default function App() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {vendors.map(vendor => {
-                const vendorOrders = orders.filter(o => o.vendorId === vendor.id && o.status === 'Delivered' && !o.cancelled);
-                const totalCodCollected = vendorOrders.reduce((sum, o) => sum + (Number(o.totalCod) || 0), 0);
-                const totalHandlingFee = vendorOrders.reduce((sum, o) => sum + (Number(o.tnHandlingFee) || 0), 0);
+                const vendorDeliveredOrders = orders.filter(o => o.vendorId === vendor.id && o.status === 'Delivered' && !o.cancelled);
+                const vendorActiveOrders = orders.filter(o => o.vendorId === vendor.id && !o.cancelled); // Active orders from Pending onwards
+                
+                const totalCodCollected = vendorDeliveredOrders.reduce((sum, o) => sum + (Number(o.totalCod) || 0), 0);
+                const totalHandlingFee = vendorActiveOrders.reduce((sum, o) => sum + (Number(o.tnHandlingFee) || 0), 0);
                 
                 const vendorItems = items.filter(i => i.vendorId === vendor.id);
                 const totalStoreCharge = vendorItems.reduce((sum, i) => sum + calculateStoreCharge(i), 0);
@@ -1450,7 +1488,7 @@ export default function App() {
                         <span className="font-semibold text-slate-800">{totalCodCollected.toLocaleString()} Ks</span>
                       </div>
                       <div className="flex justify-between text-slate-600">
-                        <span>T&N Handling Fee Deduct:</span>
+                        <span>T&N Handling Fee Deduct (Active orders):</span>
                         <span className="font-semibold text-red-600">- {totalHandlingFee.toLocaleString()} Ks</span>
                       </div>
                       <div className="flex justify-between text-slate-600">
@@ -1465,7 +1503,7 @@ export default function App() {
 
                     <button 
                       onClick={() => {
-                        exportSelectedToExcel(`settlement_${vendor.id}`, vendorOrders, vendorOrders.map(o => o.id));
+                        exportSelectedToExcel(`settlement_${vendor.id}`, vendorDeliveredOrders, vendorDeliveredOrders.map(o => o.id));
                         addLog(`Exported settlement statement for Vendor ${vendor.name}`);
                       }}
                       className="w-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold py-2 rounded-lg transition-colors flex items-center justify-center space-x-1"
