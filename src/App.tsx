@@ -392,7 +392,7 @@ export default function App() {
 
   const handleCancelSelectedOrders = async () => {
     if (selectedOrderIds.length === 0) {
-      alert('Cancel လုပ်ရန် Voucher များကို အရင် ရွေးချယ်ပါပေးပါ။');
+      alert('Cancel လုပ်ရန် Voucher များကို အရင် ရွေးချယ်ပါ။');
       return;
     }
     if (currentUser?.role !== 'Admin') {
@@ -421,11 +421,11 @@ export default function App() {
         }
 
         setOrders(prev => prev.map(o => selectedOrderIds.includes(o.id) ? { ...o, cancelled: true, status: 'Cancelled' } : o));
-        addLog(`Admin bulk cancelled Vouchers: ${selectedOrderIds.join(', ')}`);
+        addLog(`Admin bulk cancelled vouchers: ${selectedOrderIds.join(', ')}`);
         setSelectedOrderIds([]);
       } catch (err) {
         console.error('Bulk Cancel Error:', err);
-        alert('Bulk Cancel လုပ်ရာတွင် အမှားဖြစ်သွားပါသည်။');
+        alert('Vouchers များ Cancel လုပ်ရာတွင် အမှားဖြစ်သွားပါသည်။');
       }
     }
   };
@@ -796,7 +796,7 @@ export default function App() {
                     <div className="flex items-center border border-slate-300 rounded-lg bg-slate-50 p-0.5 space-x-1">
                       <button 
                         onClick={() => setChartType('line')} 
-                        title="Area / Line Chart"
+                        title="Line Chart"
                         className={`p-1.5 rounded ${chartType === 'line' ? 'bg-white shadow text-indigo-600 font-bold' : 'text-slate-500'}`}
                       >
                         <TrendingUp className="w-4 h-4" />
@@ -843,7 +843,7 @@ export default function App() {
                   </button>
                 </div>
 
-                <div className="min-h-[260px] relative flex flex-col justify-end pt-6">
+                <div className="min-h-[240px] relative flex flex-col justify-end pt-6">
                   {hoveredPoint && (
                     <div className="absolute top-2 right-2 bg-slate-900 text-white p-2.5 rounded-lg shadow-lg text-xs space-y-1 z-20">
                       <p className="font-bold text-indigo-300">{hoveredPoint.name}</p>
@@ -856,36 +856,24 @@ export default function App() {
                   )}
 
                   {chartType === 'line' && (
-                    <div className="h-52 w-full flex items-end justify-between gap-4 border-b border-indigo-100 pb-2 relative px-4">
-                      {/* Fixed Line Connecting Path & Points */}
-                      <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible px-4" preserveAspectRatio="none">
-                        <polyline
-                          fill="none"
-                          stroke="#6366f1"
-                          strokeWidth="3"
-                          points={chartData.map((d, index) => {
-                            const xPct = (index / Math.max(1, chartData.length - 1)) * 100;
-                            const yVal = d[chartMetric] || 0;
-                            const yPct = 100 - Math.min(100, Math.max(10, (yVal / maxChartValue) * 85));
-                            return `${xPct}%,${yPct}%`;
-                          }).join(' ')}
-                        />
-                      </svg>
-                      {chartData.map((d) => {
-                        const val = d[chartMetric] || 0;
-                        const heightPct = Math.min(100, Math.max(10, (val / maxChartValue) * 85));
+                    <div className="h-48 w-full flex items-end justify-between gap-4 border-b border-indigo-200 px-4 pb-2 relative">
+                      <div className="absolute inset-0 flex flex-col justify-between pointer-events-none opacity-20">
+                        <div className="border-b border-dashed border-slate-400 w-full"></div>
+                        <div className="border-b border-dashed border-slate-400 w-full"></div>
+                        <div className="border-b border-dashed border-slate-400 w-full"></div>
+                      </div>
+                      {chartData.map((d, idx) => {
+                        const heightPct = Math.max(15, ((d[chartMetric] || 0) / maxChartValue) * 100);
                         return (
                           <div 
                             key={d.id} 
                             onMouseEnter={() => setHoveredPoint(d)}
                             onMouseLeave={() => setHoveredPoint(null)}
-                            className="flex-1 flex flex-col items-center justify-end h-full group cursor-pointer z-10"
+                            className="flex-1 flex flex-col items-center justify-end group cursor-pointer z-10 h-full"
                           >
-                            <div className="text-[10px] font-bold text-indigo-600 mb-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                              {val.toLocaleString()}
-                            </div>
-                            <div className="w-3.5 h-3.5 bg-indigo-600 rounded-full border-2 border-white shadow-md group-hover:scale-150 transition-transform mb-2"></div>
-                            <span className="text-xs font-semibold text-slate-600 truncate max-w-[100px] mt-1">{d.name}</span>
+                            <span className="text-[10px] font-bold text-indigo-600 mb-2">{(d[chartMetric] || 0).toLocaleString()}</span>
+                            <div className="w-3 h-3 bg-indigo-600 rounded-full border-2 border-white shadow-md group-hover:scale-150 transition-transform mb-2"></div>
+                            <span className="text-xs font-semibold text-slate-700 truncate max-w-[100px]">{d.name}</span>
                           </div>
                         );
                       })}
@@ -893,25 +881,22 @@ export default function App() {
                   )}
 
                   {chartType === 'bar' && (
-                    <div className="h-52 flex items-end justify-around gap-4 border-b pb-2 px-4">
+                    <div className="h-48 flex items-end justify-around gap-6 border-b border-slate-200 px-4 pb-2">
                       {chartData.map(d => {
-                        const val = d[chartMetric] || 0;
-                        const heightPct = Math.min(100, Math.max(12, (val / maxChartValue) * 85));
+                        const heightPct = Math.max(15, ((d[chartMetric] || 0) / maxChartValue) * 100);
                         return (
                           <div 
                             key={d.id}
                             onMouseEnter={() => setHoveredPoint(d)}
                             onMouseLeave={() => setHoveredPoint(null)}
-                            className="flex-1 flex flex-col items-center justify-end h-full group cursor-pointer"
+                            className="flex-1 flex flex-col items-center justify-end group cursor-pointer h-full"
                           >
-                            <span className="text-[10px] font-bold text-indigo-600 mb-1">
-                              {val.toLocaleString()}
-                            </span>
+                            <span className="text-[10px] font-bold text-indigo-600 mb-1">{(d[chartMetric] || 0).toLocaleString()}</span>
                             <div 
-                              className="w-full max-w-[65px] bg-indigo-500 group-hover:bg-indigo-600 rounded-t-lg transition-all shadow-md"
+                              className="w-full max-w-[65px] bg-indigo-500 group-hover:bg-indigo-600 rounded-t-md transition-all shadow-md"
                               style={{ height: `${heightPct}%` }}
                             ></div>
-                            <span className="text-xs font-semibold text-slate-600 mt-2 truncate max-w-[100px]">{d.name}</span>
+                            <span className="text-xs font-semibold text-slate-700 mt-2 truncate max-w-[100px]">{d.name}</span>
                           </div>
                         );
                       })}
@@ -1069,7 +1054,7 @@ export default function App() {
                   className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>Export Selected Excel {selectedOrderIds.length > 0 ? `(${selectedOrderIds.length})` : ''}</span>
+                  <span>Export Selected Excel (.xls) {selectedOrderIds.length > 0 ? `(${selectedOrderIds.length})` : ''}</span>
                 </button>
 
                 {currentUser.role === 'Admin' && (
@@ -1077,8 +1062,7 @@ export default function App() {
                     onClick={handleCancelSelectedOrders}
                     className="bg-rose-600 hover:bg-rose-700 text-white text-xs px-3 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Cancel Selected {selectedOrderIds.length > 0 ? `(${selectedOrderIds.length})` : ''}</span>
+                    <span>❌ Cancel Selected Vouchers {selectedOrderIds.length > 0 ? `(${selectedOrderIds.length})` : ''}</span>
                   </button>
                 )}
 
@@ -1118,7 +1102,7 @@ export default function App() {
                       <th className="p-3">Delivery & Tracking</th>
                       <th className="p-3">COD Total</th>
                       <th className="p-3">Status</th>
-                      <th className="p-3 text-right">Voucher Action</th>
+                      <th className="p-3 text-right">Voucher Operations</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -1219,7 +1203,7 @@ export default function App() {
                   className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>Export Selected Excel {selectedItemIds.length > 0 ? `(${selectedItemIds.length})` : ''}</span>
+                  <span>Export Selected Excel (.xls) {selectedItemIds.length > 0 ? `(${selectedItemIds.length})` : ''}</span>
                 </button>
 
                 {currentUser.role !== 'Vendor' && (
@@ -1349,7 +1333,7 @@ export default function App() {
                 className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>Export Selected Excel {selectedReturnIds.length > 0 ? `(${selectedReturnIds.length})` : ''}</span>
+                <span>Export Selected Excel (.xls) {selectedReturnIds.length > 0 ? `(${selectedReturnIds.length})` : ''}</span>
               </button>
             </div>
 
@@ -1436,7 +1420,7 @@ export default function App() {
                 className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>Export Settlements</span>
+                <span>Export Settlements (.xls)</span>
               </button>
             </div>
 
@@ -1491,7 +1475,7 @@ export default function App() {
                       className="w-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold py-2 rounded-lg transition-colors flex items-center justify-center space-x-1"
                     >
                       <Download className="w-3.5 h-3.5" />
-                      <span>Export Settlement Report</span>
+                      <span>Export Settlement Report (.xls)</span>
                     </button>
                   </div>
                 );
@@ -1629,7 +1613,7 @@ export default function App() {
                 className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>Export Logs</span>
+                <span>Export Logs (.xls)</span>
               </button>
             </div>
 
