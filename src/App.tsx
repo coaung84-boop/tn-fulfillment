@@ -1583,3 +1583,678 @@ export default function App() {
                     <th className="p-3">Role</th>
                     <th className="p-3 text-right">Actions</th>
                   </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {usersList.map(u => (
+                    <tr key={u.id} className="hover:bg-slate-50">
+                      <td className="p-3 font-bold text-slate-700">{u.id}</td>
+                      <td className="p-3 font-semibold text-indigo-600">{u.username}</td>
+                      <td className="p-3 text-slate-800">{u.name}</td>
+                      <td className="p-3">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                          u.role === 'Admin' ? 'bg-purple-100 text-purple-700' :
+                          u.role === 'Staff' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'
+                        }`}>
+                          {u.role} {u.vendorId ? `(${u.vendorId})` : ''}
+                        </span>
+                      </td>
+                      <td className="p-3 text-right space-x-2">
+                        <button 
+                          onClick={() => {
+                            setEditingUser(u);
+                            setNewUser({ username: u.username, password: '', name: u.name, role: u.role, vendorId: u.vendorId || '' });
+                            setShowUserModal(true);
+                          }}
+                          className="text-xs text-indigo-600 hover:underline font-semibold"
+                        >
+                          Edit
+                        </button>
+                        {u.username !== 'admin' && (
+                          <button 
+                            onClick={() => handleDeleteUser(u.id)}
+                            className="text-xs text-rose-600 hover:underline font-semibold"
+                          >
+                            Delete
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'logs' && currentUser.role === 'Admin' && (
+          <div className="space-y-4">
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
+              <div>
+                <h3 className="font-bold text-slate-800 text-sm flex items-center">
+                  <Activity className="w-4 h-4 mr-2 text-indigo-600" />
+                  System Action Audit Logs
+                </h3>
+                <p className="text-xs text-slate-500">Track all critical administrative and user operations</p>
+              </div>
+
+              <button 
+                onClick={() => exportSelectedToExcel('action_logs', logs, [])}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Export Logs (.xls)</span>
+              </button>
+            </div>
+
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-100 text-slate-600 font-semibold border-b">
+                  <tr>
+                    <th className="p-3">Log ID</th>
+                    <th className="p-3">User & Role</th>
+                    <th className="p-3">Action Description</th>
+                    <th className="p-3 text-right">Timestamp</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {logs.map(log => (
+                    <tr key={log.id} className="hover:bg-slate-50">
+                      <td className="p-3 font-mono text-slate-500">{log.id}</td>
+                      <td className="p-3">
+                        <span className="font-bold text-slate-800">{log.user}</span>
+                        <span className="text-[10px] text-slate-400 block uppercase">{log.role}</span>
+                      </td>
+                      <td className="p-3 text-slate-700 font-medium">{log.action}</td>
+                      <td className="p-3 text-right text-slate-400 font-mono">{log.timestamp}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+      </main>
+
+      {/* Modals */}
+
+      {/* User Modal */}
+      {showUserModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <h3 className="font-bold text-slate-800 text-base border-b pb-2">
+              {editingUser ? 'Edit User Account' : 'Create New User Account'}
+            </h3>
+            <form onSubmit={handleSaveUser} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Username</label>
+                <input 
+                  type="text" required
+                  value={newUser.username}
+                  onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Password {editingUser ? '(Leave blank to keep current)' : ''}</label>
+                <input 
+                  type="password"
+                  value={newUser.password}
+                  onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Display Name</label>
+                <input 
+                  type="text" required
+                  value={newUser.name}
+                  onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Role</label>
+                <select 
+                  value={newUser.role}
+                  onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="Staff">Staff</option>
+                  <option value="Admin">Admin</option>
+                  <option value="Vendor">Vendor</option>
+                </select>
+              </div>
+              {newUser.role === 'Vendor' && (
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Associated Vendor ID</label>
+                  <select 
+                    value={newUser.vendorId}
+                    onChange={(e) => setNewUser({ ...newUser, vendorId: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="">Select Vendor</option>
+                    {vendors.map(v => <option key={v.id} value={v.id}>{v.name} ({v.id})</option>)}
+                  </select>
+                </div>
+              )}
+              <div className="flex justify-end space-x-2 pt-3">
+                <button 
+                  type="button" 
+                  onClick={() => setShowUserModal(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold shadow"
+                >
+                  Save User
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Vendor Modal */}
+      {showVendorModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <h3 className="font-bold text-slate-800 text-base border-b pb-2">Register New Vendor</h3>
+            <form onSubmit={handleSaveVendor} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Vendor Shop Name</label>
+                <input 
+                  type="text" required
+                  value={newVendor.name}
+                  onChange={(e) => setNewVendor({ ...newVendor, name: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Phone Number</label>
+                <input 
+                  type="text" required
+                  value={newVendor.phone}
+                  onChange={(e) => setNewVendor({ ...newVendor, phone: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Address</label>
+                <input 
+                  type="text"
+                  value={newVendor.address}
+                  onChange={(e) => setNewVendor({ ...newVendor, address: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Bank Account / KBZ Pay</label>
+                <input 
+                  type="text"
+                  value={newVendor.bankAccount}
+                  onChange={(e) => setNewVendor({ ...newVendor, bankAccount: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <div className="flex justify-end space-x-2 pt-3">
+                <button 
+                  type="button" 
+                  onClick={() => setShowVendorModal(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold shadow"
+                >
+                  Register Vendor
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Order Modal */}
+      {showOrderModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+            <h3 className="font-bold text-slate-800 text-base border-b pb-2">Create New Order & Voucher</h3>
+            <form onSubmit={handleCreateOrder} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Select Vendor</label>
+                <select 
+                  required
+                  value={newOrder.vendorId}
+                  onChange={(e) => {
+                    const vId = e.target.value;
+                    setNewOrder({ 
+                      ...newOrder, 
+                      vendorId: vId,
+                      items: [{ itemId: '', qty: 1, discount: 0 }]
+                    });
+                  }}
+                  className="w-full px-3 py-2 border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="">Choose Vendor</option>
+                  {vendors.map(v => <option key={v.id} value={v.id}>{v.name} ({v.id})</option>)}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Customer Phone</label>
+                  <input 
+                    type="text" required
+                    value={newOrder.customerPhone}
+                    onChange={(e) => handleCustomerPhoneChange(e.target.value)}
+                    placeholder="09..."
+                    className="w-full px-3 py-2 border rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Customer Name</label>
+                  <input 
+                    type="text" required
+                    value={newOrder.customerName}
+                    onChange={(e) => setNewOrder({ ...newOrder, customerName: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Delivery Address</label>
+                <textarea 
+                  required rows="2"
+                  value={newOrder.deliveryAddress}
+                  onChange={(e) => setNewOrder({ ...newOrder, deliveryAddress: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg"
+                ></textarea>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Delivery Service</label>
+                  <select 
+                    value={newOrder.deliveryService}
+                    onChange={(e) => setNewOrder({ ...newOrder, deliveryService: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg bg-white"
+                  >
+                    <option value="Royal Express">Royal Express</option>
+                    <option value="Ninja Van">Ninja Van</option>
+                    <option value="Flash Express">Flash Express</option>
+                    <option value="YY Delivery">YY Delivery</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Tracking No (Optional)</label>
+                  <input 
+                    type="text"
+                    value={newOrder.trackingNo}
+                    onChange={(e) => setNewOrder({ ...newOrder, trackingNo: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg"
+                  />
+                </div>
+              </div>
+
+              <div className="border-t pt-2 space-y-2">
+                <label className="block font-bold text-slate-800">Order Items</label>
+                {newOrder.items.map((it, idx) => {
+                  const vendorAvailableItems = items.filter(i => i.vendorId === newOrder.vendorId);
+                  return (
+                    <div key={idx} className="flex items-center space-x-2 bg-slate-50 p-2 rounded-lg border">
+                      <select 
+                        required
+                        value={it.itemId}
+                        onChange={(e) => {
+                          const itemId = e.target.value;
+                          const updated = [...newOrder.items];
+                          updated[idx].itemId = itemId;
+                          setNewOrder({ ...newOrder, items: updated });
+                        }}
+                        className="flex-1 px-2 py-1.5 border rounded bg-white text-xs"
+                      >
+                        <option value="">Select Item</option>
+                        {vendorAvailableItems.map(i => (
+                          <option key={i.id} value={i.id}>{i.name} (Stock: {i.quantity}, Price: {i.price})</option>
+                        ))}
+                      </select>
+                      <input 
+                        type="number" min="1" required
+                        value={it.qty}
+                        onChange={(e) => {
+                          const qty = Number(e.target.value);
+                          const updated = [...newOrder.items];
+                          updated[idx].qty = qty;
+                          setNewOrder({ ...newOrder, items: updated });
+                        }}
+                        className="w-16 px-2 py-1.5 border rounded text-xs text-center"
+                        placeholder="Qty"
+                      />
+                      <input 
+                        type="number" min="0"
+                        value={it.discount}
+                        onChange={(e) => {
+                          const discount = Number(e.target.value);
+                          const updated = [...newOrder.items];
+                          updated[idx].discount = discount;
+                          setNewOrder({ ...newOrder, items: updated });
+                        }}
+                        className="w-20 px-2 py-1.5 border rounded text-xs"
+                        placeholder="Discount"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Delivery Fee (Ks)</label>
+                <input 
+                  type="number" required
+                  value={newOrder.deliveryFee}
+                  onChange={(e) => setNewOrder({ ...newOrder, deliveryFee: Number(e.target.value) })}
+                  className="w-full px-3 py-2 border rounded-lg"
+                />
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-3">
+                <button 
+                  type="button" 
+                  onClick={() => setShowOrderModal(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold shadow"
+                >
+                  Create Order & Print Voucher
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Item Modal */}
+      {showItemModal && currentUser.role !== 'Vendor' && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <h3 className="font-bold text-slate-800 text-base border-b pb-2">Add Stock / Item for Vendor</h3>
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              if (!newItem.vendorId || !newItem.name || !newItem.price || !newItem.quantity) return;
+
+              const itemObj = {
+                id: `ITM-${Math.floor(100 + Math.random() * 900)}`,
+                vendorId: newItem.vendorId,
+                name: newItem.name,
+                category: newItem.category,
+                price: Number(newItem.price),
+                cost: 0,
+                quantity: Number(newItem.quantity),
+                damagedQty: 0,
+                stockInDate: new Date().toISOString().split('T')[0],
+                sku: `SKU-${newItem.vendorId}-${Math.floor(1000 + Math.random() * 9000)}`,
+                handlingFee: Number(newItem.handlingFee),
+                storeChargePerDay: Number(newItem.storeChargePerDay),
+                freeDays: Number(newItem.freeDays)
+              };
+
+              try {
+                const response = await fetch(`${API_BASE_URL}/api/inventory`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(itemObj)
+                });
+
+                if (response.ok) {
+                  setItems([...items, itemObj]);
+                  addLog(`Added new stock item ${itemObj.name} for Vendor ${newItem.vendorId}`);
+                  setShowItemModal(false);
+                } else {
+                  alert('Item သိမ်းဆည်းရာတွင် အမှားဖြစ်သွားပါသည်');
+                }
+              } catch (err) {
+                console.error('API Error:', err);
+                alert('Backend ချိတ်ဆက်မှု အမှားရှိပါသည်။');
+              }
+            }} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Select Vendor</label>
+                <select 
+                  required
+                  value={newItem.vendorId}
+                  onChange={(e) => setNewItem({ ...newItem, vendorId: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg bg-white"
+                >
+                  <option value="">Choose Vendor</option>
+                  {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Item Name</label>
+                <input 
+                  type="text" required
+                  value={newItem.name}
+                  onChange={(e) => setNewItem({ ...newItem, name: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Selling Price (Ks)</label>
+                  <input 
+                    type="number" required
+                    value={newItem.price}
+                    onChange={(e) => setNewItem({ ...newItem, price: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Quantity (Pcs)</label>
+                  <input 
+                    type="number" required
+                    value={newItem.quantity}
+                    onChange={(e) => setNewItem({ ...newItem, quantity: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-3">
+                <button 
+                  type="button" 
+                  onClick={() => setShowItemModal(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold shadow"
+                >
+                  Save Item Stock
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Voucher Print Modal */}
+      {showVoucherModal && selectedOrder && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="text-center border-b pb-3 space-y-1">
+              <div className="bg-indigo-600 text-white px-3 py-1 rounded inline-block font-black text-sm">T&N</div>
+              <h3 className="font-bold text-slate-900 text-base">T&N Fulfillment Delivery Voucher</h3>
+              <p className="text-xs text-slate-500">Waybill ID: <span className="font-bold text-indigo-600">{selectedOrder.id}</span></p>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              <div className="bg-slate-50 p-3 rounded-lg space-y-1 border">
+                <p><span className="font-semibold text-slate-500">Customer:</span> {selectedOrder.customerName} ({selectedOrder.customerPhone})</p>
+                <p><span className="font-semibold text-slate-500">Address:</span> {selectedOrder.deliveryAddress}</p>
+                <p><span className="font-semibold text-slate-500">Delivery By:</span> {selectedOrder.deliveryService} [Trk: {selectedOrder.trackingNo}]</p>
+              </div>
+
+              <div className="border rounded-lg overflow-hidden">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-100 font-semibold border-b">
+                    <tr>
+                      <th className="p-2">Item</th>
+                      <th className="p-2 text-center">Qty</th>
+                      <th className="p-2 text-right">Price</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {selectedOrder.items.map((it, idx) => (
+                      <tr key={idx}>
+                        <td className="p-2">{it.name}</td>
+                        <td className="p-2 text-center">{it.qty}</td>
+                        <td className="p-2 text-right">{(it.price * it.qty).toLocaleString()} Ks</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="bg-slate-50 p-3 rounded-lg space-y-1 border font-medium">
+                <div className="flex justify-between">
+                  <span>Items Subtotal:</span>
+                  <span>{(selectedOrder.itemTotal || 0).toLocaleString()} Ks</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Delivery Fee:</span>
+                  <span>{(selectedOrder.deliveryFee || 0).toLocaleString()} Ks</span>
+                </div>
+                <div className="border-t pt-1 flex justify-between font-bold text-slate-900 text-sm">
+                  <span>Total COD Collect:</span>
+                  <span className="text-indigo-600">{(selectedOrder.totalCod || 0).toLocaleString()} Ks</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end space-x-2 pt-2">
+              <button 
+                onClick={() => setShowVoucherModal(false)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold text-xs"
+              >
+                Close
+              </button>
+              <button 
+                onClick={() => window.print()}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold text-xs flex items-center space-x-1 shadow"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>Print Voucher</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Return Modal */}
+      {showReturnModal && targetReturnItem && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <h3 className="font-bold text-slate-800 text-base border-b pb-2">Return Stock to Vendor</h3>
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              const returnObj = {
+                id: `RET-${Math.floor(100 + Math.random() * 900)}`,
+                itemId: targetReturnItem.id,
+                vendorId: targetReturnItem.vendorId,
+                itemName: targetReturnItem.name,
+                qty: Number(returnForm.qty),
+                type: 'Vendor Return (Damage/Overstock)',
+                reason: returnForm.reason,
+                status: 'Returned to Vendor',
+                date: new Date().toISOString().split('T')[0]
+              };
+
+              try {
+                const response = await fetch(`${API_BASE_URL}/api/returns`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(returnObj)
+                });
+
+                if (response.ok) {
+                  setReturns([returnObj, ...returns]);
+                  const newQty = Math.max(0, (Number(targetReturnItem.quantity) || 0) - Number(returnForm.qty));
+                  await fetch(`${API_BASE_URL}/api/items/${targetReturnItem.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ quantity: newQty })
+                  });
+                  setItems(items.map(i => i.id === targetReturnItem.id ? { ...i, quantity: newQty } : i));
+                  addLog(`Processed stock return for item ${targetReturnItem.name}`);
+                  setShowReturnModal(false);
+                } else {
+                  alert('Return သိမ်းဆည်းရာတွင် အမှားဖြစ်သွားပါသည်');
+                }
+              } catch (err) {
+                console.error('API Error:', err);
+                alert('Backend ချိတ်ဆက်မှု အမှားရှိပါသည်။');
+              }
+            }} className="space-y-3 text-xs">
+              <div>
+                <p className="font-bold text-slate-800">{targetReturnItem.name}</p>
+                <p className="text-slate-500">Current In-Stock: {targetReturnItem.quantity} units</p>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Return Quantity</label>
+                <input 
+                  type="number" min="1" max={targetReturnItem.quantity} required
+                  value={returnForm.qty}
+                  onChange={(e) => setReturnForm({ ...returnForm, qty: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Reason / Note</label>
+                <input 
+                  type="text" required
+                  value={returnForm.reason}
+                  onChange={(e) => setReturnForm({ ...returnForm, reason: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg"
+                />
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-3">
+                <button 
+                  type="button" 
+                  onClick={() => setShowReturnModal(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold shadow"
+                >
+                  Confirm Return
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
