@@ -18,8 +18,8 @@ const INITIAL_USERS = [
 ];
 
 const INITIAL_VENDORS = [
-  { id: 'VND-101', name: 'Aung Cosmetic Shop', phone: '09250001122', address: 'Kamlaryut, Yangon', bankAccount: 'KBZ Pay: 09250001122', handlingFee: 500, freeStorageDays: 7, dailyStoreFee: 200 },
-  { id: 'VND-102', name: 'Trendy Fashion Hub', phone: '09450003344', address: 'Mandalay', bankAccount: 'Aya Bank: 00212345678', handlingFee: 600, freeStorageDays: 5, dailyStoreFee: 300 },
+  { id: 'VND-101', name: 'Aung Cosmetic Shop', phone: '09250001122', address: 'Kamayut, Yangon', bankAccount: 'KBZ Pay: 09250001122 (U Aung)', handlingFee: 500, freeStorageDays: 7, dailyStoreFee: 200 },
+  { id: 'VND-102', name: 'Trendy Fashion Hub', phone: '09450003344', address: 'Mandalay', bankAccount: 'AYA Bank: 00123456789 (Daw Mya)', handlingFee: 600, freeStorageDays: 5, dailyStoreFee: 300 },
 ];
 
 const INITIAL_ITEMS = [
@@ -116,16 +116,19 @@ export default function App() {
   const [showUserModal, setShowUserModal] = useState(false);
   const [showVendorModal, setShowVendorModal] = useState(false);
   const [showReturnModal, setShowReturnModal] = useState(false);
-  const [returningItem, setReturningItem] = useState(null);
+  const [targetReturnItem, setTargetReturnItem] = useState(null);
+  const [returnForm, setReturnForm] = useState({ qty: 1, reason: 'Overstock Return' });
 
-  const [returnForm, setReturnForm] = useState({ qty: 1, reason: 'Customer Refused', type: 'Vendor Return (Overstock)' });
   const [editingUser, setEditingUser] = useState(null);
 
-  const [newVendor, setNewVendor] = useState({ name: '', phone: '', address: '', bankAccount: '', handlingFee: 500, freeStorageDays: 7, dailyStoreFee: 200 });
   const [newUser, setNewUser] = useState({ username: '', password: '', name: '', role: 'Staff', vendorId: '' });
-  
+  const [newVendor, setNewVendor] = useState({ name: '', phone: '', address: '', bankAccount: '', handlingFee: 500, freeStorageDays: 7, dailyStoreFee: 200 });
+
+  // Add Stock Item State (Supports Existing Item Restock or New Item Creation)
+  const [isExistingItemMode, setIsExistingItemMode] = useState(true);
   const [newItem, setNewItem] = useState({ 
     vendorId: '', 
+    existingItemId: '',
     name: '', 
     category: 'General', 
     price: '', 
@@ -150,12 +153,6 @@ export default function App() {
   useEffect(() => {
     async function fetchData() {
       try {
-        const resVendors = await fetch(`${API_BASE_URL}/api/vendors`);
-        if (resVendors.ok) {
-          const dataVendors = await resVendors.json();
-          if (Array.isArray(dataVendors) && dataVendors.length > 0) setVendors(dataVendors);
-        }
-
         const resItems = await fetch(`${API_BASE_URL}/api/inventory`);
         if (resItems.ok) {
           const dataItems = await resItems.json();
@@ -166,12 +163,6 @@ export default function App() {
         if (resOrders.ok) {
           const dataOrders = await resOrders.json();
           if (Array.isArray(dataOrders) && dataOrders.length > 0) setOrders(dataOrders);
-        }
-
-        const resReturns = await fetch(`${API_BASE_URL}/api/returns`);
-        if (resReturns.ok) {
-          const dataReturns = await resReturns.json();
-          if (Array.isArray(dataReturns) && dataReturns.length > 0) setReturns(dataReturns);
         }
       } catch (err) {
         console.error('API Sync Error:', err);
@@ -208,92 +199,17 @@ export default function App() {
     }
   };
 
-  const handlePhoneChangeForOrder = (phone) => {
-    setNewOrder(prev => ({ ...prev, customerPhone: phone }));
-    const foundOrder = orders.find(o => o.customerPhone === phone);
-    if (foundOrder) {
-      setNewOrder(prev => ({
-        ...prev,
-        customerName: foundOrder.customerName,
-        deliveryAddress: foundOrder.deliveryAddress,
-        vendorId: foundOrder.vendorId || prev.vendorId
-      }));
-    }
-  };
-
-  const handleRegisterVendor = async (e) => {
-    e.preventDefault();
-    if (!newVendor.name || !newVendor.phone) return;
-
-    const vendorObj = {
-      id: `VND-${Math.floor(100 + Math.random() * 900)}`,
-      name: newVendor.name,
-      phone: newVendor.phone,
-      address: newVendor.address,
-      bankAccount: newVendor.bankAccount,
-      handlingFee: Number(newVendor.handlingFee) || 500,
-      freeStorageDays: Number(newVendor.freeStorageDays) || 7,
-      dailyStoreFee: Number(newVendor.dailyStoreFee) || 200
-    };
-
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/vendors`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(vendorObj)
-      });
-      if (res.ok) {
-        setVendors([...vendors, vendorObj]);
-        addLog(`Registered new vendor: ${vendorObj.name}`);
-        setShowVendorModal(false);
-        setNewVendor({ name: '', phone: '', address: '', bankAccount: '', handlingFee: 500, freeStorageDays: 7, dailyStoreFee: 200 });
-      } else {
-        alert('Vendor အသစ်သိမ်းဆည်းရာတွင် အမှားဖြစ်သွားပါသည်');
+  // Customer Memory Auto-fill when typing phone number in New Order
+  const handleCustomerPhoneChange = (phoneVal) => {
+    setNewOrder(prev => {
+      const updated = { ...prev, customerPhone: phoneVal };
+      const matchedOrder = orders.find(o => o.customerPhone.trim() === phoneVal.trim());
+      if (matchedOrder) {
+        updated.customerName = matchedOrder.customerName;
+        updated.deliveryAddress = matchedOrder.deliveryAddress;
       }
-    } catch (err) {
-      console.error('API Error:', err);
-      setVendors([...vendors, vendorObj]);
-      setShowVendorModal(false);
-    }
-  };
-
-  const handleProcessReturn = async (e) => {
-    e.preventDefault();
-    if (!returningItem) return;
-
-    const returnObj = {
-      id: `RET-${Date.now().toString().slice(-4)}`,
-      orderId: '',
-      itemId: returningItem.id,
-      vendorId: returningItem.vendorId,
-      itemName: returningItem.name,
-      qty: Number(returnForm.qty) || 1,
-      type: returnForm.type,
-      reason: returnForm.reason,
-      status: 'Returned to Vendor',
-      date: new Date().toLocaleDateString()
-    };
-
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/returns`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(returnObj)
-      });
-      if (res.ok) {
-        setReturns(prev => [returnObj, ...prev]);
-        setItems(prev => prev.map(i => i.id === returningItem.id ? { ...i, quantity: Math.max(0, (Number(i.quantity) || 0) - returnForm.qty) } : i));
-        addLog(`Processed return for ${returningItem.name} (${returnForm.qty} pcs): ${returnForm.reason}`);
-        setShowReturnModal(false);
-        setReturningItem(null);
-      } else {
-        alert('Return သိမ်းဆည်းရာတွင် အမှားဖြစ်သွားပါသည်');
-      }
-    } catch (err) {
-      console.error('API Error:', err);
-      setReturns(prev => [returnObj, ...prev]);
-      setShowReturnModal(false);
-    }
+      return updated;
+    });
   };
 
   const scopedItems = useMemo(() => {
@@ -399,6 +315,27 @@ export default function App() {
     setNewUser({ username: '', password: '', name: '', role: 'Staff', vendorId: '' });
   };
 
+  const handleSaveVendor = (e) => {
+    e.preventDefault();
+    if (!newVendor.name || !newVendor.phone) return;
+
+    const vendorObj = {
+      id: `VND-${Math.floor(100 + Math.random() * 900)}`,
+      name: newVendor.name,
+      phone: newVendor.phone,
+      address: newVendor.address,
+      bankAccount: newVendor.bankAccount,
+      handlingFee: Number(newVendor.handlingFee) || 500,
+      freeStorageDays: Number(newVendor.freeStorageDays) || 7,
+      dailyStoreFee: Number(newVendor.dailyStoreFee) || 200
+    };
+
+    setVendors([...vendors, vendorObj]);
+    addLog(`Registered new vendor: ${vendorObj.name}`);
+    setShowVendorModal(false);
+    setNewVendor({ name: '', phone: '', address: '', bankAccount: '', handlingFee: 500, freeStorageDays: 7, dailyStoreFee: 200 });
+  };
+
   const handleDeleteUser = (userId) => {
     if (confirm('ဤ User အကောင့်ကို ဖျက်ရန် သေချာပါသလား?')) {
       setUsersList(usersList.filter(u => u.id !== userId));
@@ -480,6 +417,7 @@ export default function App() {
 
       if (response.ok) {
         setOrders([createdOrder, ...orders]);
+
         setItems(prev => prev.map(item => {
           const ordered = newOrder.items.find(i => i.itemId === item.id);
           if (ordered) {
@@ -487,6 +425,7 @@ export default function App() {
           }
           return item;
         }));
+
         addLog(`Created new order ${createdOrder.id} for Vendor ${newOrder.vendorId}`);
         setShowOrderModal(false);
       } else {
@@ -495,7 +434,7 @@ export default function App() {
       }
     } catch (err) {
       console.error('API Error:', err);
-      alert('Backend ဆီသို့ ချိတ်ဆက်၍မရပါ။');
+      alert('Backend ဆီသို့ ချိတ်ဆက်၍မရပါ။ Server ဖွင့်ထားခြင်း ရှိမရှိ စစ်ဆေးပါ။');
     }
   };
 
@@ -537,10 +476,12 @@ export default function App() {
         }));
         addLog(`Updated Order ${orderId} status to '${newStatus}'`);
       } else {
-        alert('Order Update ရန် အမှားဖြစ်သွားပါသည်');
+        const errData = await response.json();
+        alert('Order Update ရန် အမှားဖြစ်သွားပါသည်: ' + (errData.error || 'Unknown error'));
       }
     } catch (err) {
       console.error('API Error:', err);
+      alert('Backend ချိတ်ဆက်မှု အမှားရှိပါသည်။');
     }
   };
 
@@ -792,11 +733,266 @@ export default function App() {
                 </div>
               </div>
             )}
+
+            {currentUser.role !== 'Vendor' && (
+              <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
+                
+                <div className="flex flex-wrap justify-between items-center gap-3 border-b pb-3">
+                  <div className="flex items-center space-x-2">
+                    <div className="flex items-center bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-1.5 text-xs font-bold text-indigo-700">
+                      <span className="mr-2">Measures:</span>
+                      <select 
+                        value={chartMetric}
+                        onChange={(e) => setChartMetric(e.target.value)}
+                        className="bg-transparent focus:outline-none cursor-pointer"
+                      >
+                        <option value="qty">Stock Quantity (Units)</option>
+                        <option value="val">Stock Selling Value (Ks)</option>
+                        <option value="store">Store Charges Total (Ks)</option>
+                      </select>
+                    </div>
+
+                    <div className="flex items-center border border-slate-300 rounded-lg bg-slate-50 p-0.5 space-x-1">
+                      <button 
+                        onClick={() => setChartType('line')} 
+                        title="Area / Line Chart"
+                        className={`p-1.5 rounded ${chartType === 'line' ? 'bg-white shadow text-indigo-600 font-bold' : 'text-slate-500'}`}
+                      >
+                        <TrendingUp className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={() => setChartType('bar')} 
+                        title="Bar Chart"
+                        className={`p-1.5 rounded ${chartType === 'bar' ? 'bg-white shadow text-indigo-600 font-bold' : 'text-slate-500'}`}
+                      >
+                        <BarChart2 className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={() => setChartType('pie')} 
+                        title="Pie Chart Share"
+                        className={`p-1.5 rounded ${chartType === 'pie' ? 'bg-white shadow text-indigo-600 font-bold' : 'text-slate-500'}`}
+                      >
+                        <PieChart className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={() => setChartType('table')} 
+                        title="Pivot Table View"
+                        className={`p-1.5 rounded ${chartType === 'table' ? 'bg-white shadow text-indigo-600 font-bold' : 'text-slate-500'}`}
+                      >
+                        <Table className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    <button 
+                      onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+                      className="p-1.5 border border-slate-300 rounded-lg bg-slate-50 text-slate-600 hover:bg-slate-100 flex items-center space-x-1 text-xs"
+                      title="Sort Order"
+                    >
+                      <ArrowUpDown className="w-3.5 h-3.5" />
+                      <span className="uppercase text-[10px] font-bold">{sortOrder}</span>
+                    </button>
+                  </div>
+
+                  <button 
+                    onClick={() => exportSelectedToExcel('items', items, [])}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-1.5 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Export All Excel (.xls)</span>
+                  </button>
+                </div>
+
+                <div className="min-h-[240px] relative flex flex-col justify-end pt-6">
+                  {hoveredPoint && (
+                    <div className="absolute top-2 right-2 bg-slate-900 text-white p-2.5 rounded-lg shadow-lg text-xs space-y-1 z-20">
+                      <p className="font-bold text-indigo-300">{hoveredPoint.name}</p>
+                      <p className="text-slate-300">
+                        {chartMetric === 'qty' ? `Stock Qty: ${hoveredPoint.qty} Units` :
+                         chartMetric === 'val' ? `Selling Value: ${(hoveredPoint.val || 0).toLocaleString()} Ks` :
+                         `Store Charges: ${(hoveredPoint.store || 0).toLocaleString()} Ks`}
+                      </p>
+                    </div>
+                  )}
+
+                  {chartType === 'line' && (
+                    <div className="h-44 w-full flex items-end justify-between gap-4 border-b border-indigo-100 pb-2 relative">
+                      {chartData.map((d) => {
+                        const heightPct = Math.max(15, ((d[chartMetric] || 0) / maxChartValue) * 100);
+                        return (
+                          <div 
+                            key={d.id} 
+                            onMouseEnter={() => setHoveredPoint(d)}
+                            onMouseLeave={() => setHoveredPoint(null)}
+                            className="flex-1 flex flex-col items-center group cursor-pointer z-10"
+                          >
+                            <div className="text-[10px] font-bold text-indigo-600 mb-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              {(d[chartMetric] || 0).toLocaleString()}
+                            </div>
+                            <div 
+                              className="w-3 h-3 bg-indigo-600 rounded-full border-2 border-white shadow group-hover:scale-150 transition-transform"
+                              style={{ marginBottom: `${heightPct * 1.2}px` }}
+                            ></div>
+                            <span className="text-xs font-semibold text-slate-600 truncate max-w-[100px]">{d.name}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {chartType === 'bar' && (
+                    <div className="h-44 flex items-end justify-around gap-4 border-b pb-2">
+                      {chartData.map(d => {
+                        const heightPct = Math.max(10, ((d[chartMetric] || 0) / maxChartValue) * 100);
+                        return (
+                          <div 
+                            key={d.id}
+                            onMouseEnter={() => setHoveredPoint(d)}
+                            onMouseLeave={() => setHoveredPoint(null)}
+                            className="flex-1 flex flex-col items-center group cursor-pointer"
+                          >
+                            <span className="text-[10px] font-bold text-indigo-600 mb-1">{(d[chartMetric] || 0).toLocaleString()}</span>
+                            <div 
+                              className="w-full max-w-[60px] bg-indigo-500 group-hover:bg-indigo-600 rounded-t-lg transition-all shadow-md"
+                              style={{ height: `${heightPct}%` }}
+                            ></div>
+                            <span className="text-xs font-semibold text-slate-600 mt-2 truncate max-w-[100px]">{d.name}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {chartType === 'pie' && (
+                    <div className="p-2 space-y-3">
+                      {chartData.map(d => {
+                        const pct = Math.round(((d[chartMetric] || 0) / maxChartValue) * 100);
+                        return (
+                          <div key={d.id} className="space-y-1">
+                            <div className="flex justify-between text-xs font-medium">
+                              <span>{d.name}</span>
+                              <span className="font-bold text-indigo-600">{(d[chartMetric] || 0).toLocaleString()} ({pct}%)</span>
+                            </div>
+                            <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
+                              <div className="bg-indigo-600 h-full rounded-full transition-all duration-500" style={{ width: `${pct}%` }}></div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {chartType === 'table' && (
+                    <div className="overflow-x-auto border rounded-lg">
+                      <table className="w-full text-xs text-left">
+                        <thead className="bg-slate-100 text-slate-700 font-bold border-b">
+                          <tr>
+                            <th className="p-2.5">Vendor Name</th>
+                            <th className="p-2.5">Stock Quantity</th>
+                            <th className="p-2.5">Total Selling Value</th>
+                            <th className="p-2.5">Overdue Store Charges</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                          {chartData.map(d => (
+                            <tr key={d.id} className="hover:bg-slate-50">
+                              <td className="p-2.5 font-bold text-slate-800">{d.name}</td>
+                              <td className="p-2.5 font-semibold text-indigo-600">{d.qty} Units</td>
+                              <td className="p-2.5 text-slate-700">{(d.val || 0).toLocaleString()} Ks</td>
+                              <td className="p-2.5 text-amber-600 font-bold">{(d.store || 0).toLocaleString()} Ks</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              
+              {currentUser.role !== 'Vendor' && (
+                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
+                  <h3 className="font-bold text-slate-800 border-b pb-2 text-sm flex items-center">
+                    <Plus className="w-4 h-4 mr-2 text-indigo-600" />
+                    Quick Operations
+                  </h3>
+                  <div className="space-y-2">
+                    <button 
+                      onClick={() => { setActiveTab('orders'); setShowOrderModal(true); }}
+                      className="w-full text-left px-4 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-semibold flex items-center justify-between transition-colors"
+                    >
+                      <span>+ Create New Order & Voucher</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                    <button 
+                      onClick={() => { setActiveTab('inventory'); setShowItemModal(true); }}
+                      className="w-full text-left px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center justify-between transition-colors"
+                    >
+                      <span>+ Add Stock / Item for Vendor</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                    <button 
+                      onClick={() => setActiveTab('settlements')}
+                      className="w-full text-left px-4 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-xs font-semibold flex items-center justify-between transition-colors"
+                    >
+                      <span>Process Vendor Settlement</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className={`${currentUser.role === 'Vendor' ? 'lg:col-span-3' : 'lg:col-span-2'} bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4`}>
+                <div className="flex justify-between items-center border-b pb-2">
+                  <h3 className="font-bold text-slate-800 text-sm flex items-center">
+                    <Truck className="w-4 h-4 mr-2 text-indigo-600" />
+                    Active Waybills & Tracking Status
+                  </h3>
+                  <button onClick={() => setActiveTab('orders')} className="text-xs text-indigo-600 hover:underline">View All</button>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs text-slate-600">
+                    <thead className="bg-slate-50 text-slate-500 font-semibold border-b">
+                      <tr>
+                        <th className="p-2">Order ID</th>
+                        <th className="p-2">Customer</th>
+                        <th className="p-2">Delivery Service</th>
+                        <th className="p-2">Tracking Status</th>
+                        <th className="p-2">COD Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {scopedOrders.slice(0, 5).map(ord => (
+                        <tr key={ord.id} className="hover:bg-slate-50">
+                          <td className="p-2 font-bold text-indigo-600">{ord.id}</td>
+                          <td className="p-2">{ord.customerName}</td>
+                          <td className="p-2">{ord.deliveryService}</td>
+                          <td className="p-2">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                              ord.status === 'Delivered' ? 'bg-emerald-100 text-emerald-700' :
+                              ord.status === 'In-Transit' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
+                            }`}>
+                              {ord.status}
+                            </span>
+                          </td>
+                          <td className="p-2 font-semibold">{(Number(ord.totalCod) || 0).toLocaleString()} Ks</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+            </div>
           </div>
         )}
 
         {activeTab === 'orders' && (
           <div className="space-y-4">
+            
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
               <div className="flex items-center space-x-2 w-full sm:w-auto">
                 <div className="relative w-full sm:w-64">
@@ -812,6 +1008,14 @@ export default function App() {
               </div>
 
               <div className="flex items-center space-x-2">
+                <button 
+                  onClick={() => exportSelectedToExcel('orders', scopedOrders, selectedOrderIds)}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Export Selected Excel (.xls) {selectedOrderIds.length > 0 ? `(${selectedOrderIds.length})` : ''}</span>
+                </button>
+
                 {currentUser.role !== 'Vendor' && (
                   <button 
                     onClick={() => setShowOrderModal(true)}
@@ -829,6 +1033,19 @@ export default function App() {
                 <table className="w-full text-left text-xs">
                   <thead className="bg-slate-100 text-slate-600 font-semibold border-b">
                     <tr>
+                      <th className="p-3 w-10 text-center">
+                        <input 
+                          type="checkbox"
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedOrderIds(scopedOrders.map(o => o.id));
+                            } else {
+                              setSelectedOrderIds([]);
+                            }
+                          }}
+                          checked={selectedOrderIds.length > 0 && selectedOrderIds.length === scopedOrders.length}
+                        />
+                      </th>
                       <th className="p-3">Order ID</th>
                       <th className="p-3">Vendor</th>
                       <th className="p-3">Customer Info</th>
@@ -844,9 +1061,23 @@ export default function App() {
                       .map(order => {
                         const vendor = vendors.find(v => v.id === order.vendorId);
                         const isLocked = (order.status === 'Delivered' && currentUser.role !== 'Admin') || currentUser.role === 'Vendor';
+                        const isSelected = selectedOrderIds.includes(order.id);
 
                         return (
                           <tr key={order.id} className={`hover:bg-slate-50 ${order.cancelled ? 'bg-rose-50/50 opacity-75' : ''}`}>
+                            <td className="p-3 text-center">
+                              <input 
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedOrderIds([...selectedOrderIds, order.id]);
+                                  } else {
+                                    setSelectedOrderIds(selectedOrderIds.filter(id => id !== order.id));
+                                  }
+                                }}
+                              />
+                            </td>
                             <td className="p-3 font-bold text-indigo-600">
                               {order.id}
                               <div className="text-[10px] text-slate-400 font-normal">{order.createdAt}</div>
@@ -888,7 +1119,7 @@ export default function App() {
                                 </button>
                               )}
                             </td>
-                            <td className="p-3 text-right">
+                            <td className="p-3 text-right space-x-2">
                               <button 
                                 onClick={() => { setSelectedOrder(order); setShowVoucherModal(true); }}
                                 className="bg-slate-100 hover:bg-slate-200 text-slate-700 p-1.5 rounded text-[11px] font-semibold inline-flex items-center space-x-1"
@@ -909,6 +1140,7 @@ export default function App() {
 
         {activeTab === 'inventory' && (
           <div className="space-y-4">
+            
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
               <div className="flex items-center space-x-3 w-full sm:w-auto">
                 {currentUser.role !== 'Vendor' && (
@@ -924,9 +1156,21 @@ export default function App() {
               </div>
 
               <div className="flex items-center space-x-2">
+                <button 
+                  onClick={() => exportSelectedToExcel('inventory_items', scopedItems, selectedItemIds)}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Export Selected Excel (.xls) {selectedItemIds.length > 0 ? `(${selectedItemIds.length})` : ''}</span>
+                </button>
+
                 {currentUser.role !== 'Vendor' && (
                   <button 
-                    onClick={() => setShowItemModal(true)}
+                    onClick={() => {
+                      setIsExistingItemMode(true);
+                      setNewItem({ vendorId: '', existingItemId: '', name: '', category: 'General', price: '', cost: '', quantity: '', handlingFee: '500', storeChargePerDay: '30', freeDays: '7' });
+                      setShowItemModal(true);
+                    }}
                     className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-4 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
                   >
                     <Plus className="w-4 h-4" />
@@ -941,6 +1185,19 @@ export default function App() {
                 <table className="w-full text-left text-xs">
                   <thead className="bg-slate-100 text-slate-600 font-semibold border-b">
                     <tr>
+                      <th className="p-3 w-10 text-center">
+                        <input 
+                          type="checkbox"
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedItemIds(scopedItems.map(i => i.id));
+                            } else {
+                              setSelectedItemIds([]);
+                            }
+                          }}
+                          checked={selectedItemIds.length > 0 && selectedItemIds.length === scopedItems.length}
+                        />
+                      </th>
                       <th className="p-3">SKU / Item</th>
                       <th className="p-3">Vendor</th>
                       <th className="p-3">Price / Cost</th>
@@ -954,9 +1211,23 @@ export default function App() {
                     {scopedItems.map(item => {
                       const vendor = vendors.find(v => v.id === item.vendorId);
                       const storeCharge = calculateStoreCharge(item);
+                      const isSelected = selectedItemIds.includes(item.id);
 
                       return (
                         <tr key={item.id} className="hover:bg-slate-50">
+                          <td className="p-3 text-center">
+                            <input 
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedItemIds([...selectedItemIds, item.id]);
+                                } else {
+                                  setSelectedItemIds(selectedItemIds.filter(id => id !== item.id));
+                                }
+                              }}
+                            />
+                          </td>
                           <td className="p-3">
                             <p className="font-bold text-slate-800">{item.name}</p>
                             <p className="text-[10px] text-slate-400 font-mono">{item.sku}</p>
@@ -988,13 +1259,13 @@ export default function App() {
                             {currentUser.role !== 'Vendor' && (
                               <button 
                                 onClick={() => {
-                                  setReturningItem(item);
-                                  setReturnForm({ qty: 1, reason: 'Customer Refused', type: 'Vendor Return (Overstock)' });
+                                  setTargetReturnItem(item);
+                                  setReturnForm({ qty: 1, reason: 'Overstock / Damaged Return' });
                                   setShowReturnModal(true);
                                 }}
-                                className="text-xs text-indigo-600 hover:underline font-semibold bg-indigo-50 px-2.5 py-1 rounded"
+                                className="text-xs text-indigo-600 hover:underline font-semibold"
                               >
-                                🔄 Return Stock
+                                Return Stock
                               </button>
                             )}
                           </td>
@@ -1015,12 +1286,33 @@ export default function App() {
                 <h3 className="font-bold text-slate-800 text-sm">Return & Damage Control</h3>
                 <p className="text-xs text-slate-500">Track delivery returns and damaged stock returned to vendors</p>
               </div>
+
+              <button 
+                onClick={() => exportSelectedToExcel('returns', returns.filter(ret => currentUser.role !== 'Vendor' || ret.vendorId === currentUser.vendorId), selectedReturnIds)}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Export Selected Excel (.xls) {selectedReturnIds.length > 0 ? `(${selectedReturnIds.length})` : ''}</span>
+              </button>
             </div>
 
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-100 text-slate-600 font-semibold border-b">
                   <tr>
+                    <th className="p-3 w-10 text-center">
+                      <input 
+                        type="checkbox"
+                        onChange={(e) => {
+                          const filtered = returns.filter(ret => currentUser.role !== 'Vendor' || ret.vendorId === currentUser.vendorId);
+                          if (e.target.checked) {
+                            setSelectedReturnIds(filtered.map(r => r.id));
+                          } else {
+                            setSelectedReturnIds([]);
+                          }
+                        }}
+                      />
+                    </th>
                     <th className="p-3">Return ID</th>
                     <th className="p-3">Item Name</th>
                     <th className="p-3">Return Type</th>
@@ -1033,25 +1325,120 @@ export default function App() {
                 <tbody className="divide-y divide-slate-100">
                   {returns
                     .filter(ret => currentUser.role !== 'Vendor' || ret.vendorId === currentUser.vendorId)
-                    .map(ret => (
-                      <tr key={ret.id} className="hover:bg-slate-50">
-                        <td className="p-3 font-bold text-slate-700">{ret.id}</td>
-                        <td className="p-3 font-semibold text-slate-800">{ret.itemName}</td>
-                        <td className="p-3">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
-                            ret.type.includes('Damage') ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
-                          }`}>
-                            {ret.type}
-                          </span>
-                        </td>
-                        <td className="p-3 font-bold">{ret.qty}</td>
-                        <td className="p-3 text-slate-500">{ret.reason}</td>
-                        <td className="p-3 font-medium text-slate-700">{ret.status}</td>
-                        <td className="p-3 text-slate-400">{ret.date}</td>
-                      </tr>
-                  ))}
+                    .map(ret => {
+                      const isSelected = selectedReturnIds.includes(ret.id);
+                      return (
+                        <tr key={ret.id} className="hover:bg-slate-50">
+                          <td className="p-3 text-center">
+                            <input 
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedReturnIds([...selectedReturnIds, ret.id]);
+                                } else {
+                                  setSelectedReturnIds(selectedReturnIds.filter(id => id !== ret.id));
+                                }
+                              }}
+                            />
+                          </td>
+                          <td className="p-3 font-bold text-slate-700">{ret.id}</td>
+                          <td className="p-3 font-semibold text-slate-800">{ret.itemName}</td>
+                          <td className="p-3">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                              ret.type.includes('Damage') ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                            }`}>
+                              {ret.type}
+                            </span>
+                          </td>
+                          <td className="p-3 font-bold">{ret.qty}</td>
+                          <td className="p-3 text-slate-500">{ret.reason}</td>
+                          <td className="p-3 font-medium text-slate-700">{ret.status}</td>
+                          <td className="p-3 text-slate-400">{ret.date}</td>
+                        </tr>
+                      );
+                  })}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'settlements' && currentUser.role !== 'Vendor' && (
+          <div className="space-y-4">
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
+              <div>
+                <h3 className="font-bold text-slate-800 text-sm">Vendor Financial Settlements (COD vs Fees)</h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Direct COD flow balance: (Total Delivered COD) - (T&N Handling Fee + Store Charges)
+                </p>
+              </div>
+
+              <button 
+                onClick={() => exportSelectedToExcel('vendors_list', vendors, [])}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Export Settlements (.xls)</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {vendors.map(vendor => {
+                const vendorOrders = orders.filter(o => o.vendorId === vendor.id && o.status === 'Delivered' && !o.cancelled);
+                const totalCodCollected = vendorOrders.reduce((sum, o) => sum + (Number(o.totalCod) || 0), 0);
+                const totalHandlingFee = vendorOrders.reduce((sum, o) => sum + (Number(o.tnHandlingFee) || 0), 0);
+                
+                const vendorItems = items.filter(i => i.vendorId === vendor.id);
+                const totalStoreCharge = vendorItems.reduce((sum, i) => sum + calculateStoreCharge(i), 0);
+
+                const netPayable = totalCodCollected - totalHandlingFee - totalStoreCharge;
+
+                return (
+                  <div key={vendor.id} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
+                    <div className="flex justify-between items-start border-b pb-3">
+                      <div>
+                        <h4 className="font-bold text-slate-800 text-base">{vendor.name}</h4>
+                        <p className="text-xs text-slate-400">{vendor.phone}</p>
+                        {vendor.bankAccount && <p className="text-[11px] text-indigo-600 font-mono mt-0.5">🏦 {vendor.bankAccount}</p>}
+                      </div>
+                      <span className="bg-indigo-50 text-indigo-700 font-bold text-xs px-2.5 py-1 rounded-full">
+                        {vendor.id}
+                      </span>
+                    </div>
+
+                    <div className="space-y-2 text-xs">
+                      <div className="flex justify-between text-slate-600">
+                        <span>Delivered COD Collected:</span>
+                        <span className="font-semibold text-slate-800">{totalCodCollected.toLocaleString()} Ks</span>
+                      </div>
+                      <div className="flex justify-between text-slate-600">
+                        <span>T&N Handling Fee Deduct:</span>
+                        <span className="font-semibold text-red-600">- {totalHandlingFee.toLocaleString()} Ks</span>
+                      </div>
+                      <div className="flex justify-between text-slate-600">
+                        <span>Warehouse Store Charges:</span>
+                        <span className="font-semibold text-red-600">- {totalStoreCharge.toLocaleString()} Ks</span>
+                      </div>
+                      <div className="border-t pt-2 flex justify-between font-bold text-sm text-slate-900">
+                        <span>Net Balance to Transfer:</span>
+                        <span className="text-emerald-600">{netPayable.toLocaleString()} Ks</span>
+                      </div>
+                    </div>
+
+                    <button 
+                      onClick={() => {
+                        exportSelectedToExcel(`settlement_${vendor.id}`, vendorOrders, vendorOrders.map(o => o.id));
+                        addLog(`Exported settlement statement for Vendor ${vendor.name}`);
+                      }}
+                      className="w-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold py-2 rounded-lg transition-colors flex items-center justify-center space-x-1"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Export Settlement Report (.xls)</span>
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -1060,8 +1447,8 @@ export default function App() {
           <div className="space-y-4">
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
               <div>
-                <h3 className="font-bold text-slate-800 text-sm">Registered Vendors & Bank Accounts</h3>
-                <p className="text-xs text-slate-500">Configure handling fees, storage rules and bank accounts per vendor</p>
+                <h3 className="font-bold text-slate-800 text-sm">Registered Vendors</h3>
+                <p className="text-xs text-slate-500">Configure handling fees, bank accounts and store charge rules per vendor</p>
               </div>
 
               {currentUser.role === 'Admin' && (
@@ -1069,7 +1456,7 @@ export default function App() {
                   onClick={() => setShowVendorModal(true)}
                   className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-4 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
                 >
-                  <UserPlus className="w-4 h-4" />
+                  <Plus className="w-4 h-4" />
                   <span>+ Register New Vendor</span>
                 </button>
               )}
@@ -1081,11 +1468,11 @@ export default function App() {
                 .map(v => (
                   <div key={v.id} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-3">
                     <div className="flex justify-between items-center">
-                      <h4 className="font-bold text-slate-800 text-base">{v.name}</h4>
-                      <span className="text-xs font-mono bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-full">{v.id}</span>
+                      <h4 className="font-bold text-slate-800">{v.name}</h4>
+                      <span className="text-xs font-mono bg-slate-100 text-slate-600 px-2 py-0.5 rounded">{v.id}</span>
                     </div>
                     <p className="text-xs text-slate-500">📍 {v.address} | 📞 {v.phone}</p>
-                    <p className="text-xs font-semibold text-emerald-600">🏦 Bank Account: {v.bankAccount || 'Not Set'}</p>
+                    {v.bankAccount && <p className="text-xs text-indigo-700 font-mono">🏦 Bank/KPay: {v.bankAccount}</p>}
                     <div className="bg-slate-50 p-3 rounded-lg text-xs space-y-1 text-slate-600">
                       <div className="flex justify-between">
                         <span>Handling Fee / Order:</span>
@@ -1106,27 +1493,153 @@ export default function App() {
           </div>
         )}
 
+        {activeTab === 'users' && currentUser.role === 'Admin' && (
+          <div className="space-y-4">
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
+              <div>
+                <h3 className="font-bold text-slate-800 text-sm flex items-center">
+                  <Users className="w-4 h-4 mr-2 text-indigo-600" />
+                  System Users & Access Management
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">Create, edit and manage user credentials and roles</p>
+              </div>
+
+              <button 
+                onClick={() => {
+                  setEditingUser(null);
+                  setNewUser({ username: '', password: '', name: '', role: 'Staff', vendorId: '' });
+                  setShowUserModal(true);
+                }}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-4 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
+              >
+                <UserPlus className="w-4 h-4" />
+                <span>+ Create New User</span>
+              </button>
+            </div>
+
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-100 text-slate-600 font-semibold border-b">
+                  <tr>
+                    <th className="p-3">User ID</th>
+                    <th className="p-3">Username</th>
+                    <th className="p-3">Display Name</th>
+                    <th className="p-3">Role</th>
+                    <th className="p-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {usersList.map(u => (
+                    <tr key={u.id} className="hover:bg-slate-50">
+                      <td className="p-3 font-mono text-slate-400">{u.id}</td>
+                      <td className="p-3 font-bold text-slate-800">{u.username}</td>
+                      <td className="p-3 text-slate-700">{u.name}</td>
+                      <td className="p-3">
+                        <span className={`px-2.5 py-0.5 rounded text-[10px] font-bold ${
+                          u.role === 'Admin' ? 'bg-indigo-100 text-indigo-700' :
+                          u.role === 'Staff' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'
+                        }`}>
+                          {u.role}
+                        </span>
+                      </td>
+                      <td className="p-3 text-right space-x-3">
+                        <button 
+                          onClick={() => {
+                            setEditingUser(u);
+                            setNewUser({ username: u.username, password: '', name: u.name, role: u.role, vendorId: u.vendorId || '' });
+                            setShowUserModal(true);
+                          }}
+                          className="text-indigo-600 hover:underline font-semibold text-xs"
+                        >
+                          Edit
+                        </button>
+                        {u.username !== 'admin' && (
+                          <button 
+                            onClick={() => handleDeleteUser(u.id)}
+                            className="text-rose-600 hover:underline font-bold text-xs"
+                          >
+                            Delete
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'logs' && currentUser.role === 'Admin' && (
+          <div className="space-y-4">
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
+              <div>
+                <h3 className="font-bold text-slate-800 text-sm flex items-center">
+                  <Activity className="w-4 h-4 mr-2 text-indigo-600" />
+                  Audit Trail & Action Logs (Data Safety)
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">Real-time log tracking user modifications and operations</p>
+              </div>
+
+              <button 
+                onClick={() => exportSelectedToExcel('audit_logs', logs, [])}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Export Logs (.xls)</span>
+              </button>
+            </div>
+
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-100 text-slate-600 font-semibold border-b">
+                  <tr>
+                    <th className="p-3">Log ID</th>
+                    <th className="p-3">User</th>
+                    <th className="p-3">Role</th>
+                    <th className="p-3">Action Details</th>
+                    <th className="p-3">Timestamp</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {logs.map(log => (
+                    <tr key={log.id} className="hover:bg-slate-50">
+                      <td className="p-3 font-mono text-slate-400">{log.id}</td>
+                      <td className="p-3 font-bold text-slate-800">{log.user}</td>
+                      <td className="p-3">
+                        <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-medium text-[10px]">
+                          {log.role}
+                        </span>
+                      </td>
+                      <td className="p-3 text-slate-700">{log.action}</td>
+                      <td className="p-3 text-slate-400 font-mono text-[11px]">{log.timestamp}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
       </main>
 
-      {/* Return Stock Modal with Reason */}
-      {showReturnModal && returningItem && (
+      {/* Return Stock Modal with Qty & Reason */}
+      {showReturnModal && targetReturnItem && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4">
             <div className="flex justify-between items-center border-b pb-3">
-              <h3 className="font-bold text-slate-800 text-base">Return Stock to Vendor</h3>
+              <h3 className="font-bold text-slate-800 text-sm">Return Stock to Vendor</h3>
               <button onClick={() => setShowReturnModal(false)} className="text-slate-400 hover:text-slate-600 text-lg">✕</button>
             </div>
 
-            <form onSubmit={handleProcessReturn} className="space-y-3 text-xs">
-              <div>
-                <p className="font-bold text-indigo-600 mb-1">Item: {returningItem.name}</p>
-                <p className="text-slate-500">Available Qty in Warehouse: {returningItem.quantity} pcs</p>
-              </div>
+            <div className="space-y-3 text-xs">
+              <p className="font-bold text-indigo-600">{targetReturnItem.name}</p>
+              <p className="text-slate-500">Current In-Stock: {targetReturnItem.quantity} pcs</p>
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Return Quantity *</label>
                 <input 
-                  type="number" min="1" max={returningItem.quantity} required
+                  type="number" min="1" max={targetReturnItem.quantity}
                   value={returnForm.qty}
                   onChange={(e) => setReturnForm({ ...returnForm, qty: Number(e.target.value) })}
                   className="w-full border border-slate-300 rounded-lg p-2"
@@ -1134,126 +1647,51 @@ export default function App() {
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Return Type</label>
-                <select 
-                  value={returnForm.type}
-                  onChange={(e) => setReturnForm({ ...returnForm, type: e.target.value })}
-                  className="w-full border border-slate-300 rounded-lg p-2"
-                >
-                  <option value="Vendor Return (Overstock)">Vendor Return (Overstock)</option>
-                  <option value="Vendor Return (Damage)">Vendor Return (Damage / Expired)</option>
-                  <option value="Delivery Return">Delivery Return (Customer Refused)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Reason / Notes *</label>
+                <label className="block font-semibold text-slate-700 mb-1">Reason / Note *</label>
                 <textarea 
-                  required rows={3}
-                  placeholder="Enter reason for return..."
+                  rows={2} required
                   value={returnForm.reason}
                   onChange={(e) => setReturnForm({ ...returnForm, reason: e.target.value })}
+                  placeholder="e.g. Expired, Damaged packaging, Overstock..."
                   className="w-full border border-slate-300 rounded-lg p-2"
                 />
               </div>
 
               <div className="pt-3 flex space-x-2">
-                <button type="button" onClick={() => setShowReturnModal(false)} className="w-1/2 bg-slate-100 py-2.5 rounded-lg font-semibold">Cancel</button>
-                <button type="submit" className="w-1/2 bg-indigo-600 text-white py-2.5 rounded-lg font-semibold">Confirm Return</button>
+                <button onClick={() => setShowReturnModal(false)} className="w-1/2 bg-slate-100 py-2.5 rounded-lg font-semibold">Cancel</button>
+                <button 
+                  onClick={() => {
+                    const numQty = Number(returnForm.qty);
+                    if (numQty <= 0 || numQty > targetReturnItem.quantity) {
+                      alert('အရေအတွက် မှားယွင်းနေပါသည်။');
+                      return;
+                    }
+                    setItems(prev => prev.map(i => i.id === targetReturnItem.id ? { ...i, quantity: Math.max(0, (Number(i.quantity) || 0) - numQty) } : i));
+                    setReturns(prev => [{
+                      id: `RET-${Date.now().toString().slice(-3)}`,
+                      itemId: targetReturnItem.id,
+                      vendorId: targetReturnItem.vendorId,
+                      itemName: targetReturnItem.name,
+                      qty: numQty,
+                      type: 'Vendor Return (Manual)',
+                      reason: returnForm.reason,
+                      status: 'Returned to Vendor',
+                      date: new Date().toLocaleDateString()
+                    }, ...prev]);
+                    addLog(`Returned ${numQty} pcs of ${targetReturnItem.name} to Vendor. Reason: ${returnForm.reason}`);
+                    setShowReturnModal(false);
+                  }}
+                  className="w-1/2 bg-rose-600 hover:bg-rose-700 text-white py-2.5 rounded-lg font-semibold"
+                >
+                  Confirm Return
+                </button>
               </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* New Vendor Registration Modal */}
-      {showVendorModal && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
-            <div className="flex justify-between items-center border-b pb-3">
-              <h3 className="font-bold text-slate-800 text-base">Register New Vendor</h3>
-              <button onClick={() => setShowVendorModal(false)} className="text-slate-400 hover:text-slate-600 text-lg">✕</button>
             </div>
-
-            <form onSubmit={handleRegisterVendor} className="space-y-3 text-xs">
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Vendor Name *</label>
-                <input 
-                  type="text" required placeholder="Shop Name"
-                  value={newVendor.name}
-                  onChange={(e) => setNewVendor({ ...newVendor, name: e.target.value })}
-                  className="w-full border border-slate-300 rounded-lg p-2"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Phone *</label>
-                  <input 
-                    type="text" required placeholder="09..."
-                    value={newVendor.phone}
-                    onChange={(e) => setNewVendor({ ...newVendor, phone: e.target.value })}
-                    className="w-full border border-slate-300 rounded-lg p-2"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Bank Account</label>
-                  <input 
-                    type="text" placeholder="KBZ Pay / AYA..."
-                    value={newVendor.bankAccount}
-                    onChange={(e) => setNewVendor({ ...newVendor, bankAccount: e.target.value })}
-                    className="w-full border border-slate-300 rounded-lg p-2"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Address</label>
-                <textarea 
-                  rows={2} placeholder="Location / Address..."
-                  value={newVendor.address}
-                  onChange={(e) => setNewVendor({ ...newVendor, address: e.target.value })}
-                  className="w-full border border-slate-300 rounded-lg p-2"
-                />
-              </div>
-
-              <div className="grid grid-cols-3 gap-2">
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Handling Fee</label>
-                  <input 
-                    type="number" value={newVendor.handlingFee}
-                    onChange={(e) => setNewVendor({ ...newVendor, handlingFee: Number(e.target.value) })}
-                    className="w-full border border-slate-300 rounded-lg p-2"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Free Days</label>
-                  <input 
-                    type="number" value={newVendor.freeStorageDays}
-                    onChange={(e) => setNewVendor({ ...newVendor, freeStorageDays: Number(e.target.value) })}
-                    className="w-full border border-slate-300 rounded-lg p-2"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Daily Store Fee</label>
-                  <input 
-                    type="number" value={newVendor.dailyStoreFee}
-                    onChange={(e) => setNewVendor({ ...newVendor, dailyStoreFee: Number(e.target.value) })}
-                    className="w-full border border-slate-300 rounded-lg p-2"
-                  />
-                </div>
-              </div>
-
-              <div className="pt-3 flex space-x-2">
-                <button type="button" onClick={() => setShowVendorModal(false)} className="w-1/2 bg-slate-100 py-2.5 rounded-lg font-semibold">Cancel</button>
-                <button type="submit" className="w-1/2 bg-indigo-600 text-white py-2.5 rounded-lg font-semibold">Save Vendor</button>
-              </div>
-            </form>
           </div>
         </div>
       )}
 
-      {/* New Order Modal with Customer Memory */}
+      {/* New Order Modal with Customer Memory (Auto-fill) */}
       {showOrderModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
@@ -1278,18 +1716,18 @@ export default function App() {
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Customer Phone * (Auto-fill)</label>
+                  <label className="block font-semibold text-slate-700 mb-1">Customer Phone (Auto-memory) *</label>
                   <input 
-                    type="text" required placeholder="09..."
+                    type="text" required placeholder="09xxxxxxxxx"
                     value={newOrder.customerPhone}
-                    onChange={(e) => handlePhoneChangeForOrder(e.target.value)}
+                    onChange={(e) => handleCustomerPhoneChange(e.target.value)}
                     className="w-full border border-slate-300 rounded-lg p-2"
                   />
                 </div>
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">Customer Name *</label>
                   <input 
-                    type="text" required
+                    type="text" required placeholder="Customer Name"
                     value={newOrder.customerName}
                     onChange={(e) => setNewOrder({ ...newOrder, customerName: e.target.value })}
                     className="w-full border border-slate-300 rounded-lg p-2"
@@ -1300,7 +1738,7 @@ export default function App() {
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Delivery Address *</label>
                 <textarea 
-                  required rows={2}
+                  required rows={2} placeholder="Full address"
                   value={newOrder.deliveryAddress}
                   onChange={(e) => setNewOrder({ ...newOrder, deliveryAddress: e.target.value })}
                   className="w-full border border-slate-300 rounded-lg p-2"
@@ -1378,98 +1816,156 @@ export default function App() {
               </div>
 
               <div className="pt-3 flex space-x-2">
-                <button type="button" onClick={() => setShowOrderModal(false)} className="w-1/2 bg-slate-100 py-2.5 rounded-lg font-semibold">Cancel</button>
-                <button type="submit" className="w-1/2 bg-indigo-600 text-white py-2.5 rounded-lg font-semibold">Save & Print Voucher</button>
+                <button 
+                  type="button" onClick={() => setShowOrderModal(false)}
+                  className="w-1/2 bg-slate-100 text-slate-700 py-2.5 rounded-lg font-semibold"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  className="w-1/2 bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-lg font-semibold shadow-md"
+                >
+                  Save & Print Voucher
+                </button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* Add Item Stock Modal */}
+      {/* Add Stock Item Modal (Supports Existing Item Restock or New Item creation with dropdowns) */}
       {showItemModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
             <div className="flex justify-between items-center border-b pb-3">
-              <h3 className="font-bold text-slate-800 text-base">Add Stock Item (Existing or New)</h3>
+              <h3 className="font-bold text-slate-800 text-base">Add Stock Item</h3>
               <button onClick={() => setShowItemModal(false)} className="text-slate-400 hover:text-slate-600 text-lg">✕</button>
+            </div>
+
+            <div className="flex bg-slate-100 p-1 rounded-lg text-xs font-semibold">
+              <button 
+                type="button"
+                onClick={() => setIsExistingItemMode(true)}
+                className={`flex-1 py-1.5 rounded-md transition-all ${isExistingItemMode ? 'bg-white shadow text-indigo-600' : 'text-slate-600'}`}
+              >
+                Existing Item (Restock)
+              </button>
+              <button 
+                type="button"
+                onClick={() => setIsExistingItemMode(false)}
+                className={`flex-1 py-1.5 rounded-md transition-all ${!isExistingItemMode ? 'bg-white shadow text-indigo-600' : 'text-slate-600'}`}
+              >
+                Brand New Item
+              </button>
             </div>
 
             <form onSubmit={async (e) => {
               e.preventDefault();
-              const vendorCode = newItem.vendorId === 'VND-101' ? 'A' : 'B';
-              const autoSku = `SKU-VND-${vendorCode}-${Math.floor(1000 + Math.random() * 9000)}`;
-
-              const itemObj = {
-                id: `ITM-${Math.floor(100 + Math.random() * 900)}`,
-                vendorId: newItem.vendorId,
-                name: newItem.name,
-                category: newItem.category || 'General',
-                price: Number(newItem.price),
-                cost: Number(newItem.cost),
-                quantity: Number(newItem.quantity),
-                damagedQty: 0,
-                stockInDate: new Date().toISOString().split('T')[0],
-                sku: autoSku,
-                handlingFee: Number(newItem.handlingFee),
-                storeChargePerDay: Number(newItem.storeChargePerDay),
-                freeDays: Number(newItem.freeDays)
-              };
-
-              try {
-                const response = await fetch(`${API_BASE_URL}/api/items`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify(itemObj)
-                });
-
-                if (response.ok) {
-                  setItems([itemObj, ...items]);
-                  addLog(`Added new stock item ${itemObj.name}`);
-                  setShowItemModal(false);
-                } else {
-                  alert('Item သိမ်းဆည်းရာတွင် အမှားဖြစ်သွားပါသည်');
+              if (isExistingItemMode) {
+                // Restock existing item
+                const targetExisting = items.find(i => i.id === newItem.existingItemId);
+                if (!targetExisting) {
+                  alert('ကျေးဇူးပြု၍ ပစ္စည်းကို ရွေးချယ်ပါ။');
+                  return;
                 }
-              } catch (err) {
-                console.error('API Error:', err);
-                setItems([itemObj, ...items]);
+                const addQty = Number(newItem.quantity) || 0;
+                const updatedItems = items.map(i => i.id === targetExisting.id ? { ...i, quantity: (Number(i.quantity) || 0) + addQty } : i);
+                setItems(updatedItems);
+                addLog(`Restocked ${addQty} pcs to existing item ${targetExisting.name}`);
                 setShowItemModal(false);
+              } else {
+                // Add new item
+                if (!newItem.vendorId || !newItem.name) {
+                  alert('Vendor နှင့် ပစ္စည်းနာမည် ထည့်ရန် လိုအပ်ပါသည်။');
+                  return;
+                }
+                const vendorCode = newItem.vendorId === 'VND-101' ? 'A' : 'B';
+                const autoSku = `SKU-VND-${vendorCode}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+                const itemObj = {
+                  id: `ITM-${Math.floor(100 + Math.random() * 900)}`,
+                  vendorId: newItem.vendorId,
+                  name: newItem.name,
+                  category: newItem.category || 'General',
+                  price: Number(newItem.price) || 0,
+                  cost: Number(newItem.cost) || 0,
+                  quantity: Number(newItem.quantity) || 0,
+                  damagedQty: 0,
+                  stockInDate: new Date().toISOString().split('T')[0],
+                  sku: autoSku,
+                  handlingFee: Number(newItem.handlingFee) || 500,
+                  storeChargePerDay: Number(newItem.storeChargePerDay) || 30,
+                  freeDays: Number(newItem.freeDays) || 7
+                };
+
+                try {
+                  const response = await fetch(`${API_BASE_URL}/api/items`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(itemObj)
+                  });
+
+                  if (response.ok) {
+                    setItems([itemObj, ...items]);
+                    addLog(`Added new stock item ${itemObj.name} with auto SKU ${autoSku}`);
+                    setShowItemModal(false);
+                  } else {
+                    const errData = await response.json();
+                    alert('Item သိမ်းဆည်းရာတွင် အမှားဖြစ်သွားပါသည်: ' + (errData.error || 'Unknown error'));
+                  }
+                } catch (err) {
+                  console.error('API Error:', err);
+                  alert('Backend ဆီသို့ ချိတ်ဆက်၍မရပါ။');
+                }
               }
             }} className="space-y-3 text-xs">
               
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Vendor Dropdown *</label>
+                <label className="block font-semibold text-slate-700 mb-1">Select Vendor (Dropdown) *</label>
                 <select 
                   required value={newItem.vendorId}
                   onChange={(e) => setNewItem({ ...newItem, vendorId: e.target.value })}
-                  className="w-full border border-slate-300 rounded-lg p-2"
+                  className="w-full border border-slate-300 rounded-lg p-2 bg-white"
                 >
                   <option value="">-- Choose Vendor --</option>
                   {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
                 </select>
               </div>
 
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Item Name (Select existing or type new) *</label>
-                <input 
-                  type="text" required placeholder="Item Name or select from dropdown..."
-                  list="existing-items"
-                  value={newItem.name}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    const matched = items.find(i => i.name.toLowerCase() === val.toLowerCase());
-                    if (matched) {
-                      setNewItem({ ...newItem, name: val, price: matched.price, cost: matched.cost });
-                    } else {
-                      setNewItem({ ...newItem, name: val });
-                    }
-                  }}
-                  className="w-full border border-slate-300 rounded-lg p-2"
-                />
-                <datalist id="existing-items">
-                  {items.map(i => <option key={i.id} value={i.name} />)}
-                </datalist>
-              </div>
+              {isExistingItemMode ? (
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Select Existing Item *</label>
+                  <select 
+                    required value={newItem.existingItemId}
+                    onChange={(e) => {
+                      const selectedId = e.target.value;
+                      const found = items.find(i => i.id === selectedId);
+                      setNewItem({ 
+                        ...newItem, 
+                        existingItemId: selectedId,
+                        price: found ? found.price : '',
+                        cost: found ? found.cost : ''
+                      });
+                    }}
+                    className="w-full border border-slate-300 rounded-lg p-2 bg-white"
+                  >
+                    <option value="">-- Choose Item Stock --</option>
+                    {items
+                      .filter(i => !newItem.vendorId || i.vendorId === newItem.vendorId)
+                      .map(i => <option key={i.id} value={i.id}>{i.name} (Current: {i.quantity} pcs)</option>)}
+                  </select>
+                </div>
+              ) : (
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">New Item Name *</label>
+                  <input 
+                    type="text" required value={newItem.name}
+                    onChange={(e) => setNewItem({ ...newItem, name: e.target.value })}
+                    className="w-full border border-slate-300 rounded-lg p-2"
+                  />
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
@@ -1492,7 +1988,7 @@ export default function App() {
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Initial Quantity *</label>
+                  <label className="block font-semibold text-slate-700 mb-1">{isExistingItemMode ? 'Restock Quantity *' : 'Initial Quantity *'}</label>
                   <input 
                     type="number" required value={newItem.quantity}
                     onChange={(e) => setNewItem({ ...newItem, quantity: e.target.value })}
@@ -1509,19 +2005,205 @@ export default function App() {
                 </div>
               </div>
 
+              {!isExistingItemMode && (
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">Store Charge / Day (Ks)</label>
+                    <input 
+                      type="number" value={newItem.storeChargePerDay}
+                      onChange={(e) => setNewItem({ ...newItem, storeChargePerDay: e.target.value })}
+                      className="w-full border border-slate-300 rounded-lg p-2"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">Free Storage Days</label>
+                    <input 
+                      type="number" value={newItem.freeDays}
+                      onChange={(e) => setNewItem({ ...newItem, freeDays: e.target.value })}
+                      className="w-full border border-slate-300 rounded-lg p-2"
+                    />
+                  </div>
+                </div>
+              )}
+
               <div className="pt-3 flex space-x-2">
                 <button type="button" onClick={() => setShowItemModal(false)} className="w-1/2 bg-slate-100 py-2.5 rounded-lg font-semibold">Cancel</button>
-                <button type="submit" className="w-1/2 bg-indigo-600 text-white py-2.5 rounded-lg font-semibold">Save Stock</button>
+                <button type="submit" className="w-1/2 bg-indigo-600 text-white py-2.5 rounded-lg font-semibold">
+                  {isExistingItemMode ? 'Confirm Restock' : 'Stock-In & Auto SKU'}
+                </button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* Voucher Modal */}
+      {/* Register New Vendor Modal */}
+      {showVendorModal && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex justify-between items-center border-b pb-3">
+              <h3 className="font-bold text-slate-800 text-base">Register New Vendor</h3>
+              <button onClick={() => setShowVendorModal(false)} className="text-slate-400 hover:text-slate-600 text-lg">✕</button>
+            </div>
+
+            <form onSubmit={handleSaveVendor} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Vendor Shop Name *</label>
+                <input 
+                  type="number" required value={newVendor.name}
+                  onChange={(e) => setNewVendor({ ...newVendor, name: e.target.value })}
+                  placeholder="e.g. Trendy Beauty Shop"
+                  className="w-full border border-slate-300 rounded-lg p-2"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Phone Number *</label>
+                  <input 
+                    type="text" required value={newVendor.phone}
+                    onChange={(e) => setNewVendor({ ...newVendor, phone: e.target.value })}
+                    placeholder="09xxxxxxxxx"
+                    className="w-full border border-slate-300 rounded-lg p-2"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Bank / KPay Account *</label>
+                  <input 
+                    type="text" required value={newVendor.bankAccount}
+                    onChange={(e) => setNewVendor({ ...newVendor, bankAccount: e.target.value })}
+                    placeholder="KBZPay: 09..."
+                    className="w-full border border-slate-300 rounded-lg p-2"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Business Address *</label>
+                <textarea 
+                  required rows={2} value={newVendor.address}
+                  onChange={(e) => setNewVendor({ ...newVendor, address: e.target.value })}
+                  placeholder="Full location address"
+                  className="w-full border border-slate-300 rounded-lg p-2"
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Handling Fee</label>
+                  <input 
+                    type="number" value={newVendor.handlingFee}
+                    onChange={(e) => setNewVendor({ ...newVendor, handlingFee: e.target.value })}
+                    className="w-full border border-slate-300 rounded-lg p-2"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Free Days</label>
+                  <input 
+                    type="number" value={newVendor.freeStorageDays}
+                    onChange={(e) => setNewVendor({ ...newVendor, freeStorageDays: e.target.value })}
+                    className="w-full border border-slate-300 rounded-lg p-2"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Daily Fee</label>
+                  <input 
+                    type="number" value={newVendor.dailyStoreFee}
+                    onChange={(e) => setNewVendor({ ...newVendor, dailyStoreFee: e.target.value })}
+                    className="w-full border border-slate-300 rounded-lg p-2"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-3 flex space-x-2">
+                <button type="button" onClick={() => setShowVendorModal(false)} className="w-1/2 bg-slate-100 py-2.5 rounded-lg font-semibold">Cancel</button>
+                <button type="submit" className="w-1/2 bg-indigo-600 text-white py-2.5 rounded-lg font-semibold">Register Vendor</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showUserModal && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex justify-between items-center border-b pb-3">
+              <h3 className="font-bold text-slate-800 text-base">
+                {editingUser ? 'Edit User Account' : 'Create New System User'}
+              </h3>
+              <button onClick={() => setShowUserModal(false)} className="text-slate-400 hover:text-slate-600 text-lg">✕</button>
+            </div>
+
+            <form onSubmit={handleSaveUser} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Username *</label>
+                <input 
+                  type="text" required value={newUser.username}
+                  onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
+                  className="w-full border border-slate-300 rounded-lg p-2"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Password {editingUser && '(Leave blank to keep current)'}</label>
+                <input 
+                  type="password" value={newUser.password}
+                  onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                  className="w-full border border-slate-300 rounded-lg p-2"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Display Name</label>
+                <input 
+                  type="text" value={newUser.name}
+                  onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
+                  className="w-full border border-slate-300 rounded-lg p-2"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Role *</label>
+                <select 
+                  value={newUser.role}
+                  onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
+                  className="w-full border border-slate-300 rounded-lg p-2"
+                >
+                  <option value="Admin">Admin (Full Control)</option>
+                  <option value="Staff">Staff (Operations)</option>
+                  <option value="Vendor">Vendor (View Only)</option>
+                </select>
+              </div>
+
+              {newUser.role === 'Vendor' && (
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Associated Vendor</label>
+                  <select 
+                    value={newUser.vendorId}
+                    onChange={(e) => setNewUser({ ...newUser, vendorId: e.target.value })}
+                    className="w-full border border-slate-300 rounded-lg p-2"
+                  >
+                    <option value="">-- Choose Vendor --</option>
+                    {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                  </select>
+                </div>
+              )}
+
+              <div className="pt-3 flex space-x-2">
+                <button type="button" onClick={() => setShowUserModal(false)} className="w-1/2 bg-slate-100 py-2.5 rounded-lg font-semibold">Cancel</button>
+                <button type="submit" className="w-1/2 bg-indigo-600 text-white py-2.5 rounded-lg font-semibold">
+                  {editingUser ? 'Update User' : 'Create User'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {showVoucherModal && selectedOrder && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl max-w-sm w-full p-6 shadow-2xl space-y-4 text-xs font-mono text-slate-800 border border-slate-200">
+            
             <div className="text-center border-b pb-3">
               <h2 className="text-lg font-black tracking-wider text-slate-900">DELIVERY VOUCHER</h2>
               <p className="text-[11px] font-bold text-indigo-600">Order ID: {selectedOrder.id}</p>
@@ -1579,6 +2261,13 @@ export default function App() {
               </div>
             </div>
 
+            <div className="pt-3 border-t text-center space-y-1">
+              <p className="text-[9px] text-slate-400 tracking-wider uppercase font-semibold">
+                Supported by T&N Fulfillment Services
+              </p>
+              <p className="text-[8px] text-slate-300">Thank you for shopping with us!</p>
+            </div>
+
             <div className="pt-2 flex space-x-2">
               <button 
                 onClick={() => setShowVoucherModal(false)}
@@ -1597,6 +2286,7 @@ export default function App() {
                 <span>Print Voucher</span>
               </button>
             </div>
+
           </div>
         </div>
       )}
