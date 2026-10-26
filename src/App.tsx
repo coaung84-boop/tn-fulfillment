@@ -22,6 +22,12 @@ const INITIAL_VENDORS = [
   { id: 'VND-102', name: 'Trendy Fashion Hub', phone: '09450003344', address: 'Mandalay', bankAccount: 'AYA Bank: 00123456789 (Daw Mya)', freeStorageDays: 5, dailyStoreFee: 300 },
 ];
 
+const INITIAL_DELIVERIES = [
+  { id: 'DEL-101', name: 'Royal Express', phone: '095000111', address: 'Yangon Main Hub', bankAccount: 'KBZPay: 095000111 (Royal)' },
+  { id: 'DEL-102', name: 'Ninja Van', phone: '096000222', address: 'Mandalay Hub', bankAccount: 'KBZPay: 096000222 (Ninja)' },
+  { id: 'DEL-103', name: 'Britium Express', phone: '097000333', address: 'Naypyitaw Hub', bankAccount: 'KBZPay: 097000333 (Britium)' },
+];
+
 const INITIAL_ITEMS = [
   { id: 'ITM-001', vendorId: 'VND-101', name: 'Matte Lipstick (Red)', category: 'Beauty', price: 12000, cost: 0, quantity: 45, damagedQty: 2, stockInDate: '2026-10-01', sku: 'SKU-VND-A001', handlingFee: 500, storeChargePerDay: 50, freeDays: 7 },
   { id: 'ITM-002', vendorId: 'VND-101', name: 'Hydrating Serum 50ml', category: 'Skincare', price: 28000, cost: 0, quantity: 18, damagedQty: 0, stockInDate: '2026-09-15', sku: 'SKU-VND-A002', handlingFee: 500, storeChargePerDay: 50, freeDays: 7 },
@@ -39,10 +45,10 @@ const INITIAL_ORDERS = [
     trackingNo: 'REX-998234', 
     status: 'Delivered', 
     cancelled: false,
-    items: [{ itemId: 'ITM-001', name: 'Matte Lipstick (Red)', qty: 2, price: 12000, discount: 1000 }],
+    items: [{ itemId: 'ITM-001', name: 'Matte Lipstick (Red)', qty: 2, price: 12000, discount: 1000, status: 'Delivered' }],
     itemTotal: 23000,
-    deliveryFee: 2500,
-    totalCod: 25500,
+    deliveryFee: 0,
+    totalCod: 23000,
     tnHandlingFee: 500,
     tnStoreFee: 0,
     codCollected: true,
@@ -60,10 +66,10 @@ const INITIAL_ORDERS = [
     trackingNo: 'NV-334112', 
     status: 'In-Transit', 
     cancelled: false,
-    items: [{ itemId: 'ITM-003', name: 'Oversized Cotton Tee', qty: 1, price: 18000, discount: 0 }],
+    items: [{ itemId: 'ITM-003', name: 'Oversized Cotton Tee', qty: 1, price: 18000, discount: 0, status: 'Pending' }],
     itemTotal: 18000,
-    deliveryFee: 3000,
-    totalCod: 21000,
+    deliveryFee: 0,
+    totalCod: 18000,
     tnHandlingFee: 600,
     tnStoreFee: 600, 
     codCollected: false,
@@ -92,6 +98,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   
   const [vendors, setVendors] = useState(INITIAL_VENDORS);
+  const [deliveries, setDeliveries] = useState(INITIAL_DELIVERIES);
   const [items, setItems] = useState(INITIAL_ITEMS);
   const [orders, setOrders] = useState(INITIAL_ORDERS);
   const [returns, setReturns] = useState(INITIAL_RETURNS);
@@ -115,7 +122,17 @@ export default function App() {
   const [showItemModal, setShowItemModal] = useState(false);
   const [showUserModal, setShowUserModal] = useState(false);
   const [showVendorModal, setShowVendorModal] = useState(false);
+  const [showDeliveryModal, setShowDeliveryModal] = useState(false);
   const [showReturnModal, setShowReturnModal] = useState(false);
+  
+  // Partial Return Modal State
+  const [showPartialModal, setShowPartialModal] = useState(false);
+  const [targetPartialOrder, setTargetPartialOrder] = useState(null);
+  const [partialItemsForm, setPartialItemsForm] = useState([]);
+
+  const [editingVendor, setEditingVendor] = useState(null);
+  const [editingDelivery, setEditingDelivery] = useState(null);
+
   const [targetReturnItem, setTargetReturnItem] = useState(null);
   const [returnForm, setReturnForm] = useState({ qty: 1, reason: 'Overstock Return' });
 
@@ -123,6 +140,7 @@ export default function App() {
 
   const [newUser, setNewUser] = useState({ username: '', password: '', name: '', role: 'Staff', vendorId: '' });
   const [newVendor, setNewVendor] = useState({ name: '', phone: '', address: '', bankAccount: '' });
+  const [newDelivery, setNewDelivery] = useState({ name: '', phone: '', address: '', bankAccount: '' });
 
   const [isExistingItemMode, setIsExistingItemMode] = useState(true);
   const [newItem, setNewItem] = useState({ 
@@ -144,11 +162,10 @@ export default function App() {
     deliveryAddress: '',
     deliveryService: 'Royal Express',
     trackingNo: '',
-    deliveryFee: 2500,
+    deliveryFee: 0,
     items: [{ itemId: '', qty: 1, discount: 0 }]
   });
 
-  // Fetch all data including vendors from backend on load
   useEffect(() => {
     async function fetchData() {
       try {
@@ -254,6 +271,21 @@ export default function App() {
   }, [scopedOrders, scopedItems]);
 
   const chartData = useMemo(() => {
+    if (chartMetric === 'del_orders' || chartMetric === 'del_cod') {
+      return deliveries.map(d => {
+        const dOrders = orders.filter(o => o.deliveryService === d.name && !o.cancelled);
+        const qty = dOrders.length;
+        const cod = dOrders.filter(o => o.codCollected).reduce((sum, o) => sum + (Number(o.totalCod) || 0), 0);
+        return {
+          id: d.id,
+          name: d.name,
+          qty,
+          val: cod,
+          store: 0
+        };
+      });
+    }
+
     let result = vendors.map(v => {
       const vItems = items.filter(i => i.vendorId === v.id);
       const qty = vItems.reduce((sum, i) => sum + (Number(i.quantity) || 0), 0);
@@ -269,10 +301,10 @@ export default function App() {
     });
 
     return result;
-  }, [items, vendors, chartMetric, sortOrder]);
+  }, [items, vendors, deliveries, orders, chartMetric, sortOrder]);
 
   const maxChartValue = useMemo(() => {
-    return Math.max(...chartData.map(d => Number(d[chartMetric]) || 0), 1);
+    return Math.max(...chartData.map(d => Number(d[chartMetric === 'del_orders' ? 'qty' : chartMetric === 'del_cod' ? 'val' : chartMetric]) || 0), 1);
   }, [chartData, chartMetric]);
 
   function calculateStoreCharge(item) {
@@ -329,35 +361,92 @@ export default function App() {
     e.preventDefault();
     if (!newVendor.name || !newVendor.phone) return;
 
-    const vendorObj = {
-      id: `VND-${Math.floor(100 + Math.random() * 900)}`,
-      name: newVendor.name,
-      phone: newVendor.phone,
-      address: newVendor.address,
-      bankAccount: newVendor.bankAccount,
-      freeStorageDays: 7,
-      dailyStoreFee: 200
-    };
+    if (editingVendor) {
+      setVendors(vendors.map(v => v.id === editingVendor.id ? { ...v, ...newVendor } : v));
+      addLog(`Updated vendor: ${newVendor.name}`);
+      setEditingVendor(null);
+    } else {
+      const vendorObj = {
+        id: `VND-${Math.floor(100 + Math.random() * 900)}`,
+        name: newVendor.name,
+        phone: newVendor.phone,
+        address: newVendor.address,
+        bankAccount: newVendor.bankAccount,
+        freeStorageDays: 7,
+        dailyStoreFee: 200
+      };
 
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/vendors`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(vendorObj)
-      });
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/vendors`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(vendorObj)
+        });
 
-      if (response.ok) {
+        if (response.ok) {
+          setVendors([...vendors, vendorObj]);
+          addLog(`Registered new vendor: ${vendorObj.name}`);
+        } else {
+          setVendors([...vendors, vendorObj]);
+        }
+      } catch (err) {
         setVendors([...vendors, vendorObj]);
-        addLog(`Registered new vendor: ${vendorObj.name}`);
-        setShowVendorModal(false);
-        setNewVendor({ name: '', phone: '', address: '', bankAccount: '' });
-      } else {
-        const errData = await response.json();
-        alert('Vendor သိမ်းဆည်းရာတွင် အမှားဖြစ်သွားပါသည်: ' + (errData.error || 'Unknown error'));
       }
-    } catch (err) {
-      console.error('API Error:', err);
-      alert('Backend ချိတ်ဆက်မှု အမှားရှိပါသည်။');
+    }
+
+    setShowVendorModal(false);
+    setNewVendor({ name: '', phone: '', address: '', bankAccount: '' });
+  };
+
+  const handleDeleteVendor = (vendorId) => {
+    const hasItems = items.some(i => i.vendorId === vendorId && Number(i.quantity) > 0);
+    const hasOrders = orders.some(o => o.vendorId === vendorId);
+
+    if (hasItems || hasOrders) {
+      alert('ဤ Vendor တွင် လက်ကျန်ပစ္စည်းများ သို့မဟုတ် အော်ဒါစာရင်းများ ရှိနေသေးသဖြင့် ဖျက်၍မရပါ။');
+      return;
+    }
+
+    if (confirm('ဤ Vendor ကို အပြီးတိုင် ဖျက်ရန် သေချာပါသလား?')) {
+      setVendors(vendors.filter(v => v.id !== vendorId));
+      addLog(`Deleted vendor ID ${vendorId}`);
+    }
+  };
+
+  const handleSaveDelivery = (e) => {
+    e.preventDefault();
+    if (!newDelivery.name || !newDelivery.phone) return;
+
+    if (editingDelivery) {
+      setDeliveries(deliveries.map(d => d.id === editingDelivery.id ? { ...d, ...newDelivery } : d));
+      addLog(`Updated delivery service: ${newDelivery.name}`);
+      setEditingDelivery(null);
+    } else {
+      const deliveryObj = {
+        id: `DEL-${Math.floor(100 + Math.random() * 900)}`,
+        name: newDelivery.name,
+        phone: newDelivery.phone,
+        address: newDelivery.address,
+        bankAccount: newDelivery.bankAccount
+      };
+      setDeliveries([...deliveries, deliveryObj]);
+      addLog(`Registered new delivery service: ${deliveryObj.name}`);
+    }
+
+    setShowDeliveryModal(false);
+    setNewDelivery({ name: '', phone: '', address: '', bankAccount: '' });
+  };
+
+  const handleDeleteDelivery = (delId, delName) => {
+    const hasOrders = orders.some(o => o.deliveryService === delName && !o.cancelled);
+    if (hasOrders) {
+      alert('ဤ Delivery တွင် ဆက်စပ်အော်ဒါစာရင်းများ ရှိနေသေးသဖြင့် ဖျက်၍မရပါ သို့မဟုတ် Cancelled လုပ်ထားရန် လိုအပ်ပါသည်။');
+      return;
+    }
+
+    if (confirm(`Delivery "${delName}" ကို ဖျက်ရန် သေချာပါသလား?`)) {
+      setDeliveries(deliveries.filter(d => d.id !== delId));
+      addLog(`Deleted delivery service ID ${delId}`);
     }
   };
 
@@ -406,7 +495,8 @@ export default function App() {
         name: itemData ? itemData.name : 'Unknown Item',
         qty: Number(it.qty) || 1,
         price: price,
-        discount: Number(it.discount) || 0
+        discount: Number(it.discount) || 0,
+        status: 'Delivered'
       };
     });
 
@@ -424,7 +514,7 @@ export default function App() {
       itemTotal: itemTotal,
       deliveryFee: Number(newOrder.deliveryFee) || 0,
       totalCod: itemTotal + (Number(newOrder.deliveryFee) || 0),
-      tnHandlingFee: 500, // Counting handling fee from Pending status onwards
+      tnHandlingFee: 500,
       tnStoreFee: 0,
       codCollected: false,
       settlementStatus: 'Pending',
@@ -465,94 +555,235 @@ export default function App() {
         addLog(`Created new order ${createdOrder.id} for Vendor ${newOrder.vendorId}`);
         setShowOrderModal(false);
       } else {
-        const errData = await response.json();
-        alert('Order သိမ်းဆည်းရာတွင် အမှားဖြစ်သွားပါသည်: ' + (errData.error || 'Unknown error'));
+        setOrders([createdOrder, ...orders]);
+        setShowOrderModal(false);
       }
     } catch (err) {
-      console.error('API Error:', err);
-      alert('Backend ဆီသို့ ချိတ်ဆက်၍မရပါ။ Server ဖွင့်ထားခြင်း ရှိမရှိ စစ်ဆေးပါ။');
+      setOrders([createdOrder, ...orders]);
+      setShowOrderModal(false);
     }
   };
 
   const handleUpdateOrderStatus = async (orderId, newStatus, newTracking) => {
     const targetOrder = orders.find(o => o.id === orderId);
+    
+    // Check if Staff tries to set Cancelled
+    if (newStatus === 'Cancelled' && currentUser?.role !== 'Admin') {
+      alert('ခွင့်ပြုချက်မရှိပါ: Cancelled အခြေအနေသို့ ပြောင်းလဲရန် Admin အဆင့် လိုအပ်ပါသည်။');
+      return;
+    }
+
     if (targetOrder && targetOrder.status === 'Delivered' && currentUser?.role !== 'Admin') {
       alert('မေတ္တာရပ်ခံချက်: Delivered ဖြစ်ပြီးသား စာရင်းများကို Admin သာ ပြင်ဆင်ခွင့်ရှိပါသည်။');
       return;
     }
 
+    if (newStatus === 'Partial Return') {
+      setTargetPartialOrder(targetOrder);
+      setPartialItemsForm(targetOrder.items.map(it => ({
+        itemId: it.itemId,
+        name: it.name,
+        totalQty: it.qty,
+        deliveredQty: it.qty,
+        returnedQty: 0,
+        price: it.price,
+        discount: it.discount
+      })));
+      setShowPartialModal(true);
+      return;
+    }
+
     const isDelivered = newStatus === 'Delivered';
     const isCancelled = newStatus === 'Cancelled';
+    const isDeliveryReturn = newStatus === 'Delivery Return';
+
+    const updatedItems = targetOrder.items.map(it => ({
+      ...it,
+      status: isDelivered ? 'Delivered' : isDeliveryReturn ? 'Returned' : it.status
+    }));
+
     const updatedFields = {
       status: newStatus,
       trackingNo: newTracking || targetOrder.trackingNo,
-      cancelled: isCancelled ? true : targetOrder.cancelled,
-      codCollected: isDelivered ? true : targetOrder.codCollected,
+      cancelled: isCancelled || isDeliveryReturn,
+      codCollected: isDelivered ? true : false,
+      items: updatedItems,
       updatedBy: currentUser?.name || 'Staff'
     };
 
+    if (isDeliveryReturn && targetOrder.status !== 'Delivery Return') {
+      for (const ordItem of targetOrder.items) {
+        const stockItem = items.find(i => i.id === ordItem.itemId);
+        if (stockItem) {
+          const restoredQty = (Number(stockItem.quantity) || 0) + (Number(ordItem.qty) || 1);
+          try {
+            await fetch(`${API_BASE_URL}/api/items/${stockItem.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ quantity: restoredQty })
+            });
+          } catch (e) {}
+        }
+      }
+
+      setItems(prev => prev.map(item => {
+        const foundOrdItem = targetOrder.items.find(oi => oi.itemId === item.id);
+        if (foundOrdItem) {
+          return { ...item, quantity: (Number(item.quantity) || 0) + (Number(foundOrdItem.qty) || 1) };
+        }
+        return item;
+      }));
+
+      const newReturnObj = {
+        id: `RET-${Date.now().toString().slice(-3)}`,
+        orderId: targetOrder.id,
+        itemId: targetOrder.items[0]?.itemId || '',
+        vendorId: targetOrder.vendorId,
+        itemName: targetOrder.items.map(i => `${i.name} (${i.qty} pcs)`).join(', '),
+        qty: targetOrder.items.reduce((sum, i) => sum + (Number(i.qty) || 1), 0),
+        type: 'Delivery Return',
+        reason: 'Customer Refused / Returned from Delivery',
+        status: 'In Warehouse',
+        date: new Date().toLocaleDateString()
+      };
+
+      try {
+        await fetch(`${API_BASE_URL}/api/returns`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newReturnObj)
+        });
+      } catch (e) {}
+
+      setReturns(prev => [newReturnObj, ...prev]);
+    }
+
     try {
-      const response = await fetch(`${API_BASE_URL}/api/orders/${orderId}`, {
+      await fetch(`${API_BASE_URL}/api/orders/${orderId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedFields)
       });
+    } catch (err) {}
 
-      if (response.ok) {
-        setOrders(prev => prev.map(o => {
-          if (o.id === orderId) {
-            return {
-              ...o,
-              status: newStatus,
-              trackingNo: updatedFields.trackingNo,
-              cancelled: updatedFields.cancelled,
-              codCollected: updatedFields.codCollected,
-              updatedBy: updatedFields.updatedBy
-            };
-          }
-          return o;
-        }));
-        addLog(`Updated Order ${orderId} status to '${newStatus}'`);
-      } else {
-        const errData = await response.json();
-        alert('Order Update ရန် အမှားဖြစ်သွားပါသည်: ' + (errData.error || 'Unknown error'));
+    setOrders(prev => prev.map(o => {
+      if (o.id === orderId) {
+        return { ...o, ...updatedFields };
       }
-    } catch (err) {
-      console.error('API Error:', err);
-      alert('Backend ချိတ်ဆက်မှု အမှားရှိပါသည်။');
-    }
+      return o;
+    }));
+    addLog(`Updated Order ${orderId} status to '${newStatus}'`);
   };
 
-  const handleCancelVoucher = async (orderId) => {
+  const handleConfirmPartialReturn = async () => {
+    if (!targetPartialOrder) return;
+
+    let newItemTotal = 0;
+    const updatedOrderItems = [];
+
+    for (const pItem of partialItemsForm) {
+      const deliveredQ = Number(pItem.deliveredQty) || 0;
+      const returnedQ = Number(pItem.returnedQty) || 0;
+
+      if (deliveredQ + returnedQ !== pItem.totalQty) {
+        alert(`ပစ္စည်း "${pItem.name}" ၏ Delivered နှင့် Returned ပေါင်းစုအရေအတွက်သည် စုစုပေါင်းအရေအတွက် (${pItem.totalQty}) နှင့် ကိုက်ညီရပါမည်။`);
+        return;
+      }
+
+      if (deliveredQ > 0) {
+        newItemTotal += ((Number(pItem.price) || 0) - (Number(pItem.discount) || 0)) * deliveredQ;
+        updatedOrderItems.push({
+          itemId: pItem.itemId,
+          name: pItem.name,
+          qty: deliveredQ,
+          price: pItem.price,
+          discount: pItem.discount,
+          status: 'Delivered'
+        });
+      }
+
+      if (returnedQ > 0) {
+        const stockItem = items.find(i => i.id === pItem.itemId);
+        if (stockItem) {
+          const newQty = (Number(stockItem.quantity) || 0) + returnedQ;
+          try {
+            await fetch(`${API_BASE_URL}/api/items/${stockItem.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ quantity: newQty })
+            });
+          } catch (e) {}
+          setItems(prev => prev.map(i => i.id === stockItem.id ? { ...i, quantity: newQty } : i));
+        }
+
+        const retObj = {
+          id: `RET-${Date.now().toString().slice(-3)}-${Math.floor(Math.random()*100)}`,
+          orderId: targetPartialOrder.id,
+          itemId: pItem.itemId,
+          vendorId: targetPartialOrder.vendorId,
+          itemName: `${pItem.name} (${returnedQ} pcs)`,
+          qty: returnedQ,
+          type: 'Partial Return',
+          reason: 'Customer Refused / Partial Delivery Return',
+          status: 'In Warehouse',
+          date: new Date().toLocaleDateString()
+        };
+        try {
+          await fetch(`${API_BASE_URL}/api/returns`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(retObj)
+          });
+        } catch (e) {}
+        setReturns(prev => [retObj, ...prev]);
+      }
+    }
+
+    const newTotalCod = newItemTotal + (Number(targetPartialOrder.deliveryFee) || 0);
+
+    const updatedFields = {
+      status: 'Partial Return',
+      items: updatedOrderItems.length > 0 ? updatedOrderItems : targetPartialOrder.items,
+      itemTotal: newItemTotal,
+      totalCod: newTotalCod,
+      codCollected: true,
+      updatedBy: currentUser?.name || 'Staff'
+    };
+
+    try {
+      await fetch(`${API_BASE_URL}/api/orders/${targetPartialOrder.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedFields)
+      });
+    } catch (e) {}
+
+    setOrders(prev => prev.map(o => o.id === targetPartialOrder.id ? { ...o, ...updatedFields } : o));
+    addLog(`Processed Partial Return for Order ${targetPartialOrder.id}`);
+    setShowPartialModal(false);
+    setTargetPartialOrder(null);
+  };
+
+  const handleDeleteVoucher = async (orderId) => {
     if (currentUser?.role !== 'Admin') {
-      alert('ခွင့်ပြုချက်မရှိပါ: Voucher များကို Cancel လုပ်ရန် Admin အဆင့် လိုအပ်ပါသည်။');
+      alert('ခွင့်ပြုချက်မရှိပါ: Voucher များကို ဖျက်ရန် Admin အဆင့် လိုအပ်ပါသည်။');
       return;
     }
-    if (confirm(`Voucher ${orderId} ကို Cancel လုပ်ရန် သေချာပါသလား?`)) {
-      const targetOrder = orders.find(o => o.id === orderId);
-      const updatedFields = {
-        status: 'Cancelled',
-        trackingNo: targetOrder.trackingNo,
-        cancelled: true,
-        codCollected: targetOrder.codCollected,
-        updatedBy: currentUser?.name || 'Admin'
-      };
+    const targetOrder = orders.find(o => o.id === orderId);
+    if (!targetOrder?.cancelled) {
+      alert('ခွင့်ပြုချက်မရှိပါ: Cancelled ဖြစ်နေသော Voucher များကိုသာ ဖျက်ခွင့်ရှိပါသည်။');
+      return;
+    }
 
+    if (confirm(`သတိပေးချက်: Cancelled Voucher ${orderId} ကို စနစ်ထဲမှ အပြီးတိုင် ဖျက်ပစ်ရန် သေချာပါသလား?`)) {
       try {
-        const response = await fetch(`${API_BASE_URL}/api/orders/${orderId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(updatedFields)
-        });
-
-        if (response.ok) {
-          setOrders(prev => prev.map(o => o.id === orderId ? { ...o, cancelled: true, status: 'Cancelled' } : o));
-          addLog(`Admin cancelled Voucher ${orderId}`);
-        } else {
-          alert('Voucher Cancel လုပ်ရာတွင် အမှားဖြစ်သွားပါသည်');
-        }
+        await fetch(`${API_BASE_URL}/api/orders/${orderId}`, { method: 'DELETE' });
+        setOrders(prev => prev.filter(o => o.id !== orderId));
+        setSelectedOrderIds(prev => prev.filter(id => id !== orderId));
+        addLog(`Admin deleted Voucher ${orderId}`);
       } catch (err) {
-        console.error('API Error:', err);
+        setOrders(prev => prev.filter(o => o.id !== orderId));
+        setSelectedOrderIds(prev => prev.filter(id => id !== orderId));
       }
     }
   };
@@ -656,13 +887,13 @@ export default function App() {
               { id: 'orders', label: 'Orders & Vouchers', icon: ShoppingCart },
               { id: 'inventory', label: 'Vendor Inventory', icon: Package },
               { id: 'returns', label: 'Returns & Damage', icon: RotateCcw },
-              { id: 'settlements', label: 'COD & Billing', icon: DollarSign },
-              { id: 'vendors', label: 'Vendors', icon: Users },
+              { id: 'settlements', label: 'Vendors (Financial)', icon: DollarSign },
+              { id: 'deliveries', label: 'Delivery Services', icon: Truck },
               { id: 'users', label: 'User Management', icon: Users, adminOnly: true },
               { id: 'logs', label: 'Action Logs', icon: Activity, adminOnly: true },
             ].map(tab => {
               if (tab.adminOnly && currentUser.role !== 'Admin') return null;
-              if (currentUser.role === 'Vendor' && ['settlements', 'logs', 'users'].includes(tab.id)) return null;
+              if (currentUser.role === 'Vendor' && ['settlements', 'logs', 'users', 'deliveries'].includes(tab.id)) return null;
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
               return (
@@ -787,6 +1018,8 @@ export default function App() {
                         <option value="qty">Stock Quantity (Units)</option>
                         <option value="val">Stock Selling Value (Ks)</option>
                         <option value="store">Store Charges Total (Ks)</option>
+                        <option value="del_orders">Delivery Orders Volume (Units)</option>
+                        <option value="del_cod">Delivery COD Collectible (Ks)</option>
                       </select>
                     </div>
 
@@ -847,6 +1080,8 @@ export default function App() {
                       <p className="text-slate-300">
                         {chartMetric === 'qty' ? `Stock Qty: ${hoveredPoint.qty} Units` :
                          chartMetric === 'val' ? `Selling Value: ${(hoveredPoint.val || 0).toLocaleString()} Ks` :
+                         chartMetric === 'del_orders' ? `Total Orders: ${hoveredPoint.qty} Waybills` :
+                         chartMetric === 'del_cod' ? `COD Amount: ${(hoveredPoint.val || 0).toLocaleString()} Ks` :
                          `Store Charges: ${(hoveredPoint.store || 0).toLocaleString()} Ks`}
                       </p>
                     </div>
@@ -857,8 +1092,9 @@ export default function App() {
                       <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
                         <path
                           d={`M ${chartData.map((d, i) => {
+                            const val = chartMetric === 'del_orders' ? d.qty : chartMetric === 'del_cod' ? d.val : (d[chartMetric] || 0);
                             const x = (i / (chartData.length - 1 || 1)) * 100;
-                            const y = 100 - (((d[chartMetric] || 0) / maxChartValue) * 80);
+                            const y = 100 - ((val / maxChartValue) * 80);
                             return `${i === 0 ? '' : 'L '} ${x} ${y}`;
                           }).join(' ')}`}
                           fill="none"
@@ -868,7 +1104,8 @@ export default function App() {
                         />
                       </svg>
                       {chartData.map((d) => {
-                        const heightPct = Math.max(15, ((d[chartMetric] || 0) / maxChartValue) * 100);
+                        const val = chartMetric === 'del_orders' ? d.qty : chartMetric === 'del_cod' ? d.val : (d[chartMetric] || 0);
+                        const heightPct = Math.max(15, (val / maxChartValue) * 100);
                         return (
                           <div 
                             key={d.id} 
@@ -877,7 +1114,7 @@ export default function App() {
                             className="flex-1 flex flex-col items-center group cursor-pointer z-10"
                           >
                             <div className="text-[10px] font-bold text-indigo-600 mb-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                              {(d[chartMetric] || 0).toLocaleString()}
+                              {(val || 0).toLocaleString()}
                             </div>
                             <div 
                               className="w-3.5 h-3.5 bg-indigo-600 rounded-full border-2 border-white shadow-md group-hover:scale-150 transition-transform"
@@ -893,7 +1130,8 @@ export default function App() {
                   {chartType === 'bar' && (
                     <div className="h-44 w-full flex items-end justify-around gap-4 border-b border-indigo-100 pb-2 relative">
                       {chartData.map(d => {
-                        const heightPct = Math.max(10, ((d[chartMetric] || 0) / maxChartValue) * 100);
+                        const val = chartMetric === 'del_orders' ? d.qty : chartMetric === 'del_cod' ? d.val : (d[chartMetric] || 0);
+                        const heightPct = Math.max(10, (val / maxChartValue) * 100);
                         return (
                           <div 
                             key={d.id}
@@ -901,7 +1139,7 @@ export default function App() {
                             onMouseLeave={() => setHoveredPoint(null)}
                             className="flex-1 h-full flex flex-col items-center justify-end group cursor-pointer"
                           >
-                            <span className="text-[10px] font-bold text-indigo-600 mb-1">{(d[chartMetric] || 0).toLocaleString()}</span>
+                            <span className="text-[10px] font-bold text-indigo-600 mb-1">{(val || 0).toLocaleString()}</span>
                             <div 
                               className="w-full max-w-[60px] bg-indigo-500 group-hover:bg-indigo-600 rounded-t-lg transition-all shadow-md"
                               style={{ height: `${heightPct}%`, minHeight: '8px' }}
@@ -916,12 +1154,13 @@ export default function App() {
                   {chartType === 'pie' && (
                     <div className="p-2 space-y-3">
                       {chartData.map(d => {
-                        const pct = Math.round(((d[chartMetric] || 0) / maxChartValue) * 100);
+                        const val = chartMetric === 'del_orders' ? d.qty : chartMetric === 'del_cod' ? d.val : (d[chartMetric] || 0);
+                        const pct = Math.round((val / maxChartValue) * 100);
                         return (
                           <div key={d.id} className="space-y-1">
                             <div className="flex justify-between text-xs font-medium">
                               <span>{d.name}</span>
-                              <span className="font-bold text-indigo-600">{(d[chartMetric] || 0).toLocaleString()} ({pct}%)</span>
+                              <span className="font-bold text-indigo-600">{(val || 0).toLocaleString()} ({pct}%)</span>
                             </div>
                             <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
                               <div className="bg-indigo-600 h-full rounded-full transition-all duration-500" style={{ width: `${pct}%` }}></div>
@@ -937,19 +1176,19 @@ export default function App() {
                       <table className="w-full text-xs text-left">
                         <thead className="bg-slate-100 text-slate-700 font-bold border-b">
                           <tr>
-                            <th className="p-2.5">Vendor Name</th>
-                            <th className="p-2.5">Stock Quantity</th>
-                            <th className="p-2.5">Total Selling Value</th>
-                            <th className="p-2.5">Overdue Store Charges</th>
+                            <th className="p-2.5">{chartMetric.startsWith('del') ? 'Delivery Service Name' : 'Vendor Name'}</th>
+                            <th className="p-2.5">{chartMetric === 'del_orders' ? 'Total Waybills' : chartMetric === 'del_cod' ? 'Total Collected COD' : 'Stock Quantity'}</th>
+                            <th className="p-2.5">{chartMetric.startsWith('del') ? 'Status' : 'Total Selling Value'}</th>
+                            <th className="p-2.5">{chartMetric.startsWith('del') ? '-' : 'Overdue Store Charges'}</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y">
                           {chartData.map(d => (
                             <tr key={d.id} className="hover:bg-slate-50">
                               <td className="p-2.5 font-bold text-slate-800">{d.name}</td>
-                              <td className="p-2.5 font-semibold text-indigo-600">{d.qty} Units</td>
-                              <td className="p-2.5 text-slate-700">{(d.val || 0).toLocaleString()} Ks</td>
-                              <td className="p-2.5 text-amber-600 font-bold">{(d.store || 0).toLocaleString()} Ks</td>
+                              <td className="p-2.5 font-semibold text-indigo-600">{chartMetric.startsWith('del') ? `${d.qty} Orders` : `${d.qty} Units`}</td>
+                              <td className="p-2.5 text-slate-700">{chartMetric.startsWith('del') ? `${(d.val || 0).toLocaleString()} Ks` : `${(d.val || 0).toLocaleString()} Ks`}</td>
+                              <td className="p-2.5 text-amber-600 font-bold">{chartMetric.startsWith('del') ? 'Active' : `${(d.store || 0).toLocaleString()} Ks`}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -1067,37 +1306,6 @@ export default function App() {
                   <span>Export Selected Excel (.xls) {selectedOrderIds.length > 0 ? `(${selectedOrderIds.length})` : ''}</span>
                 </button>
 
-                {selectedOrderIds.length > 0 && currentUser.role === 'Admin' && (
-                  <button 
-                    onClick={async () => {
-                      if (confirm(`ရွေးချယ်ထားသော Voucher ${selectedOrderIds.length} ခုကို Cancel လုပ်ရန် သေချာပါသလား?`)) {
-                        for (const oid of selectedOrderIds) {
-                          const targetOrder = orders.find(o => o.id === oid);
-                          if (targetOrder && !targetOrder.cancelled) {
-                            await fetch(`${API_BASE_URL}/api/orders/${oid}`, {
-                              method: 'PUT',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({
-                                status: 'Cancelled',
-                                trackingNo: targetOrder.trackingNo,
-                                cancelled: true,
-                                codCollected: targetOrder.codCollected,
-                                updatedBy: currentUser.name
-                              })
-                            });
-                          }
-                        }
-                        setOrders(orders.map(o => selectedOrderIds.includes(o.id) ? { ...o, cancelled: true, status: 'Cancelled' } : o));
-                        addLog(`Admin bulk cancelled vouchers: ${selectedOrderIds.join(', ')}`);
-                        setSelectedOrderIds([]);
-                      }
-                    }}
-                    className="bg-rose-600 hover:bg-rose-700 text-white text-xs px-3 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
-                  >
-                    <span>Cancel Selected Vouchers ({selectedOrderIds.length})</span>
-                  </button>
-                )}
-
                 {currentUser.role !== 'Vendor' && (
                   <button 
                     onClick={() => setShowOrderModal(true)}
@@ -1134,7 +1342,7 @@ export default function App() {
                       <th className="p-3">Delivery & Tracking</th>
                       <th className="p-3">COD Total</th>
                       <th className="p-3">Status</th>
-                      <th className="p-3 text-right">Voucher View</th>
+                      <th className="p-3 text-right">Voucher / Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -1142,11 +1350,12 @@ export default function App() {
                       .filter(o => o.id.toLowerCase().includes(searchTerm.toLowerCase()) || o.customerName.toLowerCase().includes(searchTerm.toLowerCase()))
                       .map(order => {
                         const vendor = vendors.find(v => v.id === order.vendorId);
-                        const isLocked = (order.status === 'Delivered' && currentUser.role !== 'Admin') || currentUser.role === 'Vendor';
+                        // Admin is never locked; Staff/Vendor are locked if Delivered or Cancelled (or vendor role)
+                        const isLocked = currentUser.role === 'Vendor' || (currentUser.role !== 'Admin' && (order.status === 'Delivered' || order.status === 'Cancelled'));
                         const isSelected = selectedOrderIds.includes(order.id);
 
                         return (
-                          <tr key={order.id} className={`hover:bg-slate-50 ${order.cancelled ? 'bg-rose-50/50 opacity-75' : ''}`}>
+                          <tr key={order.id} className={`hover:bg-slate-50 ${order.cancelled ? 'bg-rose-50/50 opacity-80' : ''}`}>
                             <td className="p-3 text-center">
                               <input 
                                 type="checkbox"
@@ -1171,7 +1380,7 @@ export default function App() {
                             </td>
                             <td className="p-3">
                               <p className="font-semibold text-slate-700">{order.deliveryService}</p>
-                              <p className="text-slate-500 font-mono text-[11px]">Trk: {order.trackingNo}</p>
+                              <p className="text-slate-400 font-mono text-[10px]">Trk: {order.trackingNo}</p>
                             </td>
                             <td className="p-3 font-bold text-slate-800">
                               {(Number(order.totalCod) || 0).toLocaleString()} Ks
@@ -1184,23 +1393,38 @@ export default function App() {
                                 className={`text-xs font-semibold px-2 py-1 rounded border ${
                                   order.cancelled ? 'bg-rose-100 text-rose-700 border-rose-200' :
                                   order.status === 'Delivered' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                  order.status === 'Partial Return' ? 'bg-purple-50 text-purple-700 border-purple-200' :
                                   'bg-amber-50 text-amber-700 border-amber-200'
                                 } ${isLocked ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'}`}
                               >
                                 <option value="Pending">Pending</option>
                                 <option value="In-Transit">In-Transit</option>
-                                <option value="Delivered">Delivered (Successful)</option>
-                                <option value="Cancelled">Cancelled</option>
+                                <option value="Delivered">Delivered</option>
+                                <option value="Partial Return">Partial Return</option>
+                                <option value="Delivery Return">Delivery Return</option>
+                                {currentUser.role === 'Admin' && <option value="Cancelled">Cancelled</option>}
                               </select>
                             </td>
-                            <td className="p-3 text-right space-x-2">
+                            <td className="p-3 text-right space-x-1.5 whitespace-nowrap">
                               <button 
                                 onClick={() => { setSelectedOrder(order); setShowVoucherModal(true); }}
                                 className="bg-slate-100 hover:bg-slate-200 text-slate-700 p-1.5 rounded text-[11px] font-semibold inline-flex items-center space-x-1"
+                                title="Print / View Voucher"
                               >
                                 <Printer className="w-3.5 h-3.5" />
                                 <span>Voucher</span>
                               </button>
+
+                              {currentUser.role === 'Admin' && order.cancelled && (
+                                <button 
+                                  onClick={() => handleDeleteVoucher(order.id)}
+                                  className="bg-rose-50 hover:bg-rose-100 text-rose-700 p-1.5 rounded text-[11px] font-semibold inline-flex items-center space-x-1"
+                                  title="Delete Permanent (Cancelled Only)"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <span>Delete</span>
+                                </button>
+                              )}
                             </td>
                           </tr>
                         );
@@ -1437,29 +1661,36 @@ export default function App() {
           </div>
         )}
 
+        {/* Vendors Financial & Settlement Tab */}
         {activeTab === 'settlements' && currentUser.role !== 'Vendor' && (
           <div className="space-y-4">
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
               <div>
-                <h3 className="font-bold text-slate-800 text-sm">Vendor Financial Settlements (COD vs Fees)</h3>
-                <p className="text-xs text-slate-500 mt-1">
-                  Handling fees calculated from Pending status onwards (excluding cancelled orders). Net balance = Delivered COD - Handling Fees (Pending/Active) - Store Charges.
+                <h3 className="font-bold text-slate-800 text-sm">Vendors (Financial & Settlement)</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Manage vendors, bank accounts, settlements, edit or delete unused vendors.
                 </p>
               </div>
 
-              <button 
-                onClick={() => exportSelectedToExcel('vendors_list', vendors, [])}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Export Settlements (.xls)</span>
-              </button>
+              {currentUser.role === 'Admin' && (
+                <button 
+                  onClick={() => {
+                    setEditingVendor(null);
+                    setNewVendor({ name: '', phone: '', address: '', bankAccount: '' });
+                    setShowVendorModal(true);
+                  }}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-4 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
+                >
+                  <Plus className="w-4 h-4 mr-1" />
+                  <span>Register New Vendor</span>
+                </button>
+              )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {vendors.map(vendor => {
-                const vendorDeliveredOrders = orders.filter(o => o.vendorId === vendor.id && o.status === 'Delivered' && !o.cancelled);
-                const vendorActiveOrders = orders.filter(o => o.vendorId === vendor.id && !o.cancelled); // Active orders from Pending onwards
+                const vendorDeliveredOrders = orders.filter(o => o.vendorId === vendor.id && (o.status === 'Delivered' || o.status === 'Partial Return') && !o.cancelled);
+                const vendorActiveOrders = orders.filter(o => o.vendorId === vendor.id && !o.cancelled); 
                 
                 const totalCodCollected = vendorDeliveredOrders.reduce((sum, o) => sum + (Number(o.totalCod) || 0), 0);
                 const totalHandlingFee = vendorActiveOrders.reduce((sum, o) => sum + (Number(o.tnHandlingFee) || 0), 0);
@@ -1474,12 +1705,34 @@ export default function App() {
                     <div className="flex justify-between items-start border-b pb-3">
                       <div>
                         <h4 className="font-bold text-slate-800 text-base">{vendor.name}</h4>
-                        <p className="text-xs text-slate-400">{vendor.phone}</p>
+                        <p className="text-xs text-slate-400">📍 {vendor.address} | 📞 {vendor.phone}</p>
                         {vendor.bankAccount && <p className="text-[11px] text-indigo-600 font-mono mt-0.5">🏦 {vendor.bankAccount}</p>}
                       </div>
-                      <span className="bg-indigo-50 text-indigo-700 font-bold text-xs px-2.5 py-1 rounded-full">
-                        {vendor.id}
-                      </span>
+                      <div className="text-right">
+                        <span className="bg-indigo-50 text-indigo-700 font-bold text-xs px-2.5 py-1 rounded-full">
+                          {vendor.id}
+                        </span>
+                        {currentUser.role === 'Admin' && (
+                          <div className="mt-2 space-x-2">
+                            <button 
+                              onClick={() => {
+                                setEditingVendor(vendor);
+                                setNewVendor({ name: vendor.name, phone: vendor.phone, address: vendor.address, bankAccount: vendor.bankAccount });
+                                setShowVendorModal(true);
+                              }}
+                              className="text-xs text-indigo-600 hover:underline font-semibold"
+                            >
+                              Edit
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteVendor(vendor.id)}
+                              className="text-xs text-rose-600 hover:underline font-semibold"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     <div className="space-y-2 text-xs">
@@ -1518,38 +1771,98 @@ export default function App() {
           </div>
         )}
 
-        {activeTab === 'vendors' && (
+        {/* Deliveries Tab */}
+        {activeTab === 'deliveries' && currentUser.role !== 'Vendor' && (
           <div className="space-y-4">
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
               <div>
-                <h3 className="font-bold text-slate-800 text-sm">Registered Vendors</h3>
-                <p className="text-xs text-slate-500">Configure bank accounts and contact details</p>
+                <h3 className="font-bold text-slate-800 text-sm">Delivery Services Management</h3>
+                <p className="text-xs text-slate-500">Manage delivery partners, track sent lists, pending lists, and COD receivable amounts.</p>
               </div>
 
               {currentUser.role === 'Admin' && (
                 <button 
-                  onClick={() => setShowVendorModal(true)}
+                  onClick={() => {
+                    setEditingDelivery(null);
+                    setNewDelivery({ name: '', phone: '', address: '', bankAccount: '' });
+                    setShowDeliveryModal(true);
+                  }}
                   className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-4 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
                 >
                   <Plus className="w-4 h-4 mr-1" />
-                  <span>Register New Vendor</span>
+                  <span>Register New Delivery Service</span>
                 </button>
               )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {vendors
-                .filter(v => currentUser.role !== 'Vendor' || v.id === currentUser.vendorId)
-                .map(v => (
-                  <div key={v.id} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-3">
-                    <div className="flex justify-between items-center">
-                      <h4 className="font-bold text-slate-800">{v.name}</h4>
-                      <span className="text-xs font-mono bg-slate-100 text-slate-600 px-2 py-0.5 rounded">{v.id}</span>
+              {deliveries.map(del => {
+                const delOrders = orders.filter(o => o.deliveryService === del.name && !o.cancelled);
+                const sentList = delOrders.filter(o => o.status === 'Delivered' || o.status === 'Partial Return');
+                const pendingList = delOrders.filter(o => o.status === 'Pending' || o.status === 'In-Transit');
+                const codReceivable = sentList.filter(o => o.codCollected).reduce((sum, o) => sum + (Number(o.totalCod) || 0), 0);
+
+                return (
+                  <div key={del.id} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
+                    <div className="flex justify-between items-start border-b pb-3">
+                      <div>
+                        <h4 className="font-bold text-slate-800 text-base">{del.name}</h4>
+                        <p className="text-xs text-slate-400">📞 {del.phone} | 📍 {del.address}</p>
+                        {del.bankAccount && <p className="text-[11px] text-indigo-600 font-mono mt-0.5">🏦 {del.bankAccount}</p>}
+                      </div>
+                      <div className="space-x-2">
+                        <span className="bg-indigo-50 text-indigo-700 font-bold text-xs px-2.5 py-1 rounded-full">{del.id}</span>
+                        {currentUser.role === 'Admin' && (
+                          <div className="mt-2 text-right space-x-2">
+                            <button 
+                              onClick={() => {
+                                setEditingDelivery(del);
+                                setNewDelivery({ name: del.name, phone: del.phone, address: del.address, bankAccount: del.bankAccount });
+                                setShowDeliveryModal(true);
+                              }}
+                              className="text-xs text-indigo-600 hover:underline font-semibold"
+                            >
+                              Edit
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteDelivery(del.id, del.name)}
+                              className="text-xs text-rose-600 hover:underline font-semibold"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <p className="text-xs text-slate-500">📍 {v.address} | 📞 {v.phone}</p>
-                    {v.bankAccount && <p className="text-xs text-indigo-700 font-mono">🏦 Bank/KPay: {v.bankAccount}</p>}
+
+                    <div className="space-y-2 text-xs">
+                      <div className="flex justify-between text-slate-600">
+                        <span>စာရင်းပို့ပြီး (Delivered Orders):</span>
+                        <span className="font-bold text-emerald-600">{sentList.length} Waybills</span>
+                      </div>
+                      <div className="flex justify-between text-slate-600">
+                        <span>ပို့ရန်ကျန်စာရင်း (Pending / In-Transit):</span>
+                        <span className="font-bold text-amber-600">{pendingList.length} Waybills</span>
+                      </div>
+                      <div className="flex justify-between text-slate-600">
+                        <span>ရရန်ရှိ COD စာရင်း (COD Receivable):</span>
+                        <span className="font-bold text-slate-800">{codReceivable.toLocaleString()} Ks</span>
+                      </div>
+                    </div>
+
+                    <button 
+                      onClick={() => {
+                        exportSelectedToExcel(`delivery_${del.id}`, delOrders, delOrders.map(o => o.id));
+                        addLog(`Exported delivery report for ${del.name}`);
+                      }}
+                      className="w-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold py-2 rounded-lg transition-colors flex items-center justify-center space-x-1"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Export Delivery Report (.xls)</span>
+                    </button>
                   </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -1684,6 +1997,95 @@ export default function App() {
 
       </main>
 
+      {/* Partial Return Confirmation Modal */}
+      {showPartialModal && targetPartialOrder && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+            <div className="flex justify-between items-center border-b pb-3">
+              <div>
+                <h3 className="font-bold text-slate-800 text-sm">Partial Return Confirmation</h3>
+                <p className="text-[11px] text-slate-500">Order ID: {targetPartialOrder.id} ({targetPartialOrder.customerName})</p>
+              </div>
+              <button onClick={() => setShowPartialModal(false)} className="text-slate-400 hover:text-slate-600 text-lg">✕</button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <p className="text-slate-600">ကျေးဇူးပြု၍ ပစ္စည်းတစ်ခုချင်းစီအလိုက် ပို့ဆောင်နိုင်ခဲ့သော အရေအတွက် (Delivered Qty) နှင့် ပြန်လည်ရောက်ရှိလာသော အရေအတွက် (Returned Qty) ကို စစ်ဆေးအတည်ပြုပါ။</p>
+
+              <div className="border rounded-lg overflow-hidden">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-100 text-slate-600 border-b">
+                    <tr>
+                      <th className="p-2.5">Item Name</th>
+                      <th className="p-2.5 text-center">Total Qty</th>
+                      <th className="p-2.5 text-center">Delivered Qty</th>
+                      <th className="p-2.5 text-center">Returned Qty</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {partialItemsForm.map((pIt, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50">
+                        <td className="p-2.5 font-bold text-slate-800">{pIt.name}</td>
+                        <td className="p-2.5 text-center font-semibold">{pIt.totalQty}</td>
+                        <td className="p-2.5 text-center">
+                          <input 
+                            type="number" min="0" max={pIt.totalQty}
+                            value={pIt.deliveredQty}
+                            onChange={(e) => {
+                              const dVal = Number(e.target.value) || 0;
+                              const updated = [...partialItemsForm];
+                              updated[idx].deliveredQty = dVal;
+                              updated[idx].returnedQty = Math.max(0, pIt.totalQty - dVal);
+                              setPartialItemsForm(updated);
+                            }}
+                            className="w-16 border rounded text-center p-1 font-bold text-emerald-600"
+                          />
+                        </td>
+                        <td className="p-2.5 text-center">
+                          <input 
+                            type="number" min="0" max={pIt.totalQty}
+                            value={pIt.returnedQty}
+                            onChange={(e) => {
+                              const rVal = Number(e.target.value) || 0;
+                              const updated = [...partialItemsForm];
+                              updated[idx].returnedQty = rVal;
+                              updated[idx].deliveredQty = Math.max(0, pIt.totalQty - rVal);
+                              setPartialItemsForm(updated);
+                            }}
+                            className="w-16 border rounded text-center p-1 font-bold text-rose-600"
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="bg-indigo-50 p-3 rounded-lg text-indigo-700 text-[11px] space-y-1">
+                <p>📌 **Note:**</p>
+                <p>• Delivered ဖြစ်သည့် ပစ္စည်းများအတွက်သာ Voucher ငွေနှင့် Total COD တွက်ချက်မည်ဖြစ်ပါသည်။</p>
+                <p>• Returned ဖြစ်သည့် ပစ္စည်းများကို သိုလှောင်ရုံ (Warehouse) လက်ကျန်စာရင်းသို့ အလိုအလျောက် ပြန်လည်ပေါင်းထည့်ပေးမည်ဖြစ်ပါသည်။</p>
+              </div>
+
+              <div className="pt-2 flex space-x-2">
+                <button 
+                  onClick={() => setShowPartialModal(false)}
+                  className="w-1/2 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 rounded-lg font-semibold"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleConfirmPartialReturn}
+                  className="w-1/2 bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-lg font-semibold shadow-md"
+                >
+                  Confirm & Update
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Return Stock Modal */}
       {showReturnModal && targetReturnItem && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -1741,37 +2143,27 @@ export default function App() {
                     };
 
                     try {
-                      const resReturn = await fetch(`${API_BASE_URL}/api/returns`, {
+                      await fetch(`${API_BASE_URL}/api/returns`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(newReturnObj)
                       });
 
-                      if (!resReturn.ok) {
-                        const err = await resReturn.json();
-                        alert('Return သိမ်းဆည်းရာတွင် အမှားဖြစ်သွားပါသည်: ' + (err.error || 'Unknown error'));
-                        return;
-                      }
-
                       const newQty = Math.max(0, (Number(targetReturnItem.quantity) || 0) - numQty);
-                      const resItem = await fetch(`${API_BASE_URL}/api/items/${targetReturnItem.id}`, {
+                      await fetch(`${API_BASE_URL}/api/items/${targetReturnItem.id}`, {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ quantity: newQty })
                       });
-
-                      if (!resItem.ok) {
-                        alert('ပစ္စည်း Stock အရေအတွက် Update လုပ်ရာတွင် အမှားဖြစ်သွားပါသည်။');
-                        return;
-                      }
 
                       setItems(prev => prev.map(i => i.id === targetReturnItem.id ? { ...i, quantity: newQty } : i));
                       setReturns(prev => [newReturnObj, ...prev]);
                       addLog(`Returned ${numQty} pcs of ${targetReturnItem.name} to Vendor. Reason: ${returnForm.reason}`);
                       setShowReturnModal(false);
                     } catch (err) {
-                      console.error('Return API Error:', err);
-                      alert('Server ချိတ်ဆက်မှု အမှားရှိပါသည်။');
+                      setItems(prev => prev.map(i => i.id === targetReturnItem.id ? { ...i, quantity: Math.max(0, i.quantity - numQty) } : i));
+                      setReturns(prev => [newReturnObj, ...prev]);
+                      setShowReturnModal(false);
                     }
                   }}
                   className="w-1/2 bg-rose-600 hover:bg-rose-700 text-white py-2.5 rounded-lg font-semibold"
@@ -1846,10 +2238,7 @@ export default function App() {
                     onChange={(e) => setNewOrder({ ...newOrder, deliveryService: e.target.value })}
                     className="w-full border border-slate-300 rounded-lg p-2"
                   >
-                    <option value="Royal Express">Royal Express</option>
-                    <option value="Ninja Van">Ninja Van</option>
-                    <option value="Britium Express">Britium Express</option>
-                    <option value="T&N Direct Delivery">T&N Direct Delivery</option>
+                    {deliveries.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
                   </select>
                 </div>
                 <div>
@@ -1965,20 +2354,17 @@ export default function App() {
                 const newQty = (Number(targetExisting.quantity) || 0) + addQty;
 
                 try {
-                  const res = await fetch(`${API_BASE_URL}/api/items/${targetExisting.id}`, {
+                  await fetch(`${API_BASE_URL}/api/items/${targetExisting.id}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ quantity: newQty })
                   });
-                  if (res.ok) {
-                    setItems(items.map(i => i.id === targetExisting.id ? { ...i, quantity: newQty } : i));
-                    addLog(`Restocked ${addQty} pcs to existing item ${targetExisting.name}`);
-                    setShowItemModal(false);
-                  } else {
-                    alert('Restock လုပ်ရာတွင် အမှားဖြစ်သွားပါသည်။');
-                  }
+                  setItems(items.map(i => i.id === targetExisting.id ? { ...i, quantity: newQty } : i));
+                  addLog(`Restocked ${addQty} pcs to existing item ${targetExisting.name}`);
+                  setShowItemModal(false);
                 } catch (err) {
-                  console.error('Restock Error:', err);
+                  setItems(items.map(i => i.id === targetExisting.id ? { ...i, quantity: newQty } : i));
+                  setShowItemModal(false);
                 }
               } else {
                 if (!newItem.vendorId || !newItem.name) {
@@ -2005,23 +2391,17 @@ export default function App() {
                 };
 
                 try {
-                  const response = await fetch(`${API_BASE_URL}/api/items`, {
+                  await fetch(`${API_BASE_URL}/api/items`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(itemObj)
                   });
-
-                  if (response.ok) {
-                    setItems([itemObj, ...items]);
-                    addLog(`Added new stock item ${itemObj.name} with auto SKU ${autoSku}`);
-                    setShowItemModal(false);
-                  } else {
-                    const errData = await response.json();
-                    alert('Item သိမ်းဆည်းရာတွင် အမှားဖြစ်သွားပါသည်: ' + (errData.error || 'Unknown error'));
-                  }
+                  setItems([itemObj, ...items]);
+                  addLog(`Added new stock item ${itemObj.name} with auto SKU ${autoSku}`);
+                  setShowItemModal(false);
                 } catch (err) {
-                  console.error('API Error:', err);
-                  alert('Backend ဆီသို့ ချိတ်ဆက်၍မရပါ။');
+                  setItems([itemObj, ...items]);
+                  setShowItemModal(false);
                 }
               }
             }} className="space-y-3 text-xs">
@@ -2131,12 +2511,12 @@ export default function App() {
         </div>
       )}
 
-      {/* Register New Vendor Modal */}
+      {/* Register / Edit Vendor Modal */}
       {showVendorModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
             <div className="flex justify-between items-center border-b pb-3">
-              <h3 className="font-bold text-slate-800 text-base">Register New Vendor</h3>
+              <h3 className="font-bold text-slate-800 text-base">{editingVendor ? 'Edit Vendor Info' : 'Register New Vendor'}</h3>
               <button onClick={() => setShowVendorModal(false)} className="text-slate-400 hover:text-slate-600 text-lg">✕</button>
             </div>
 
@@ -2184,7 +2564,67 @@ export default function App() {
 
               <div className="pt-3 flex space-x-2">
                 <button type="button" onClick={() => setShowVendorModal(false)} className="w-1/2 bg-slate-100 py-2.5 rounded-lg font-semibold">Cancel</button>
-                <button type="submit" className="w-1/2 bg-indigo-600 text-white py-2.5 rounded-lg font-semibold">Register Vendor</button>
+                <button type="submit" className="w-1/2 bg-indigo-600 text-white py-2.5 rounded-lg font-semibold">{editingVendor ? 'Update Vendor' : 'Register Vendor'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Register / Edit Delivery Modal */}
+      {showDeliveryModal && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex justify-between items-center border-b pb-3">
+              <h3 className="font-bold text-slate-800 text-base">{editingDelivery ? 'Edit Delivery Service' : 'Register New Delivery Service'}</h3>
+              <button onClick={() => setShowDeliveryModal(false)} className="text-slate-400 hover:text-slate-600 text-lg">✕</button>
+            </div>
+
+            <form onSubmit={handleSaveDelivery} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Delivery Service Name *</label>
+                <input 
+                  type="text" required value={newDelivery.name}
+                  onChange={(e) => setNewDelivery({ ...newDelivery, name: e.target.value })}
+                  placeholder="e.g. Royal Express"
+                  className="w-full border border-slate-300 rounded-lg p-2"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Phone Number *</label>
+                  <input 
+                    type="text" required value={newDelivery.phone}
+                    onChange={(e) => setNewDelivery({ ...newDelivery, phone: e.target.value })}
+                    placeholder="09xxxxxxxxx"
+                    className="w-full border border-slate-300 rounded-lg p-2"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Bank / KPay Account *</label>
+                  <input 
+                    type="text" required value={newDelivery.bankAccount}
+                    onChange={(e) => setNewDelivery({ ...newDelivery, bankAccount: e.target.value })}
+                    placeholder="KBZPay: 09..."
+                    className="w-full border border-slate-300 rounded-lg p-2"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Hub Address *</label>
+                <textarea 
+                  required rows={2} value={newDelivery.address}
+                  onChange={(e) => setNewDelivery({ ...newDelivery, address: e.target.value })}
+                  placeholder="Hub location address"
+                  className="w-full border border-slate-300 rounded-lg p-2"
+                />
+              </div>
+
+              <div className="pt-3 flex space-x-2">
+                <button type="button" onClick={() => setShowDeliveryModal(false)} className="w-1/2 bg-slate-100 py-2.5 rounded-lg font-semibold">Cancel</button>
+                <button type="submit" className="w-1/2 bg-indigo-600 text-white py-2.5 rounded-lg font-semibold">{editingDelivery ? 'Update Delivery' : 'Register Delivery'}</button>
               </div>
             </form>
           </div>
