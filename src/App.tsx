@@ -50,7 +50,7 @@ const INITIAL_ORDERS = [
     deliveryFee: 0,
     totalCod: 23000,
     tnHandlingFee: 500,
-    tnStoreFee: 200,
+    tnStoreFee: 0,
     codCollected: true,
     settlementStatus: 'Settled',
     createdAt: '2026-10-18 10:30 AM',
@@ -71,7 +71,7 @@ const INITIAL_ORDERS = [
     deliveryFee: 0,
     totalCod: 18000,
     tnHandlingFee: 600,
-    tnStoreFee: 300, 
+    tnStoreFee: 600, 
     codCollected: false,
     settlementStatus: 'Pending',
     createdAt: '2026-10-21 02:15 PM',
@@ -313,6 +313,44 @@ export default function App() {
     return orders;
   }, [orders, currentUser, vendorFilter]);
 
+  // Helper for item store charge calculation up to target date (e.g. order date or today)
+  function calculateStoreCharge(item, targetDate = new Date()) {
+    const vendor = vendors.find(v => v.id === item.vendorId);
+    if (!vendor) return 0;
+    
+    const stockIn = new Date(item.stockInDate);
+    const diffDays = Math.floor((targetDate.getTime() - stockIn.getTime()) / (1000 * 60 * 60 * 24));
+    
+    const freeDays = item.freeDays !== undefined ? item.freeDays : vendor.freeStorageDays;
+    const dailyFee = item.storeChargePerDay !== undefined ? item.storeChargePerDay : vendor.dailyStoreFee;
+
+    if (diffDays > freeDays) {
+      const extraDays = diffDays - freeDays;
+      return extraDays * dailyFee * (Number(item.quantity) || 0);
+    }
+    return 0;
+  }
+
+  // Helper for calculating store charges for specific ordered items up to the order creation date
+  function calculateOrderStoreCharges(order) {
+    let totalStore = 0;
+    const orderDate = new Date(order.createdAt || Date.now());
+    order.items.forEach(ordItem => {
+      const stockItem = items.find(i => i.id === ordItem.itemId);
+      if (stockItem) {
+        const stockIn = new Date(stockItem.stockInDate);
+        const diffDays = Math.floor((orderDate.getTime() - stockIn.getTime()) / (1000 * 60 * 60 * 24));
+        const freeDays = stockItem.freeDays !== undefined ? stockItem.freeDays : 7;
+        const dailyFee = stockItem.storeChargePerDay !== undefined ? stockItem.storeChargePerDay : 30;
+        if (diffDays > freeDays) {
+          const extraDays = diffDays - freeDays;
+          totalStore += extraDays * dailyFee * ordItem.qty;
+        }
+      }
+    });
+    return totalStore;
+  }
+
   const stats = useMemo(() => {
     const totalOrders = scopedOrders.length;
     const pendingOrders = scopedOrders.filter(o => o.status === 'Pending' || o.status === 'In-Transit').length;
@@ -368,55 +406,17 @@ export default function App() {
     return Math.max(...chartData.map(d => Number(d[chartMetric.startsWith('del') ? 'qty' : chartMetric]) || 0), 1);
   }, [chartData, chartMetric]);
 
-  function calculateStoreCharge(item) {
-    const vendor = vendors.find(v => v.id === item.vendorId);
-    if (!vendor) return 0;
-    
-    const stockIn = new Date(item.stockInDate);
-    const today = new Date();
-    const diffDays = Math.floor((today.getTime() - stockIn.getTime()) / (1000 * 60 * 60 * 24));
-    
-    const freeDays = item.freeDays !== undefined ? item.freeDays : vendor.freeStorageDays;
-    const dailyFee = item.storeChargePerDay !== undefined ? item.storeChargePerDay : vendor.dailyStoreFee;
-
-    if (diffDays > freeDays) {
-      const extraDays = diffDays - freeDays;
-      return extraDays * dailyFee * (Number(item.quantity) || 0);
-    }
-    return 0;
-  }
-
-  // Calculate store charge for a specific ordered item based on stock-in date up to order creation date
-  function calculateOrderStoreCharge(orderDateStr, itemObj) {
-    const vendor = vendors.find(v => v.id === itemObj.vendorId);
-    if (!vendor) return 0;
-
-    const stockIn = new Date(itemObj.stockInDate);
-    const orderDate = new Date(orderDateStr || Date.now());
-    const diffDays = Math.floor((orderDate.getTime() - stockIn.getTime()) / (1000 * 60 * 60 * 24));
-
-    const freeDays = itemObj.freeDays !== undefined ? itemObj.freeDays : vendor.freeStorageDays;
-    const dailyFee = itemObj.storeChargePerDay !== undefined ? itemObj.storeChargePerDay : vendor.dailyStoreFee;
-
-    if (diffDays > freeDays) {
-      const extraDays = diffDays - freeDays;
-      return extraDays * dailyFee;
-    }
-    return 0;
-  }
-
-  // Export Complete Client-Facing Vendor Payout Statement Report (.xls) with Handling & Store Charges breakdown
+  // Helper for Exporting Client-Facing Vendor Payout Statement Report with full details (COD, Handling Fee, Store Charges, Net Payable per voucher)
   const exportVendorStatement = (vendorId) => {
     const vendor = vendors.find(v => v.id === vendorId);
     if (!vendor) return;
     const vOrders = orders.filter(o => o.vendorId === vendorId && (o.status === 'Delivered' || o.status === 'Partial Return') && !o.cancelled);
     
     const reportRows = vOrders.map(o => {
+      const storeCharge = calculateOrderStoreCharges(o);
+      const handlingFee = Number(o.tnHandlingFee) || 0;
       const cod = Number(o.totalCod) || 0;
-      const handling = Number(o.tnHandlingFee) || 0;
-      const store = Number(o.tnStoreFee) || 0;
-      const netPayable = cod - handling - store;
-
+      const netPayable = cod - handlingFee - storeCharge;
       return {
         "Order ID": o.id,
         "Date": o.createdAt,
@@ -424,8 +424,8 @@ export default function App() {
         "Customer Phone": o.customerPhone,
         "Delivery Service": o.deliveryService,
         "COD Amount (Ks)": cod,
-        "Handling Fee (Ks)": handling,
-        "Store Charge (Ks)": store,
+        "Handling Fee (Ks)": handlingFee,
+        "Store Charges (Ks)": storeCharge,
         "Net Payable (Ks)": netPayable
       };
     });
@@ -445,7 +445,7 @@ export default function App() {
     document.body.appendChild(link);
     link.click();
     link.remove();
-    addLog(`Exported complete official client Vendor Statement report for ${vendor.name}`);
+    addLog(`Exported official client Vendor Statement report for ${vendor.name}`);
   };
 
   const handleExportBackup = () => {
@@ -674,20 +674,11 @@ export default function App() {
     if (!newOrder.vendorId || newOrder.items.length === 0) return;
 
     let itemTotal = 0;
-    let totalStoreFee = 0;
-    const orderDateStr = new Date().toLocaleString();
-
     const orderItems = newOrder.items.map(it => {
       const itemData = items.find(i => i.id === it.itemId);
       const price = itemData ? (Number(itemData.price) || 0) : 0;
       const lineTotal = (price - (Number(it.discount) || 0)) * (Number(it.qty) || 1);
       itemTotal += lineTotal;
-
-      if (itemData) {
-        const itemStoreCharge = calculateOrderStoreCharge(orderDateStr, itemData) * (Number(it.qty) || 1);
-        totalStoreFee += itemStoreCharge;
-      }
-
       return {
         itemId: it.itemId,
         name: itemData ? itemData.name : 'Unknown Item',
@@ -713,10 +704,10 @@ export default function App() {
       deliveryFee: Number(newOrder.deliveryFee) || 0,
       totalCod: itemTotal + (Number(newOrder.deliveryFee) || 0),
       tnHandlingFee: 500,
-      tnStoreFee: totalStoreFee,
+      tnStoreFee: 0,
       codCollected: false,
       settlementStatus: 'Pending',
-      createdAt: orderDateStr,
+      createdAt: new Date().toLocaleString(),
       updatedBy: currentUser?.name || 'Staff'
     };
 
@@ -871,7 +862,6 @@ export default function App() {
     if (!targetPartialOrder) return;
 
     let newItemTotal = 0;
-    let newStoreFee = 0;
     const updatedOrderItems = [];
 
     for (const pItem of partialItemsForm) {
@@ -885,11 +875,6 @@ export default function App() {
 
       if (deliveredQ > 0) {
         newItemTotal += ((Number(pItem.price) || 0) - (Number(pItem.discount) || 0)) * deliveredQ;
-        const stockItem = items.find(i => i.id === pItem.itemId);
-        if (stockItem) {
-          newStoreFee += calculateOrderStoreCharge(targetPartialOrder.createdAt, stockItem) * deliveredQ;
-        }
-
         updatedOrderItems.push({
           itemId: pItem.itemId,
           name: pItem.name,
@@ -943,7 +928,6 @@ export default function App() {
       status: 'Partial Return',
       items: updatedOrderItems.length > 0 ? updatedOrderItems : targetPartialOrder.items,
       itemTotal: newItemTotal,
-      tnStoreFee: newStoreFee,
       totalCod: newTotalCod,
       codCollected: true,
       updatedBy: currentUser?.name || 'Staff'
@@ -1245,7 +1229,7 @@ export default function App() {
                   <div>
                     <p className="text-xs font-semibold text-slate-500 uppercase">T&N Revenue (Fees)</p>
                     <p className="text-2xl font-bold text-indigo-600 mt-1">{(stats.totalTnRevenue || 0).toLocaleString()} Ks</p>
-                    <p className="text-xs text-slate-400 mt-1">Handling + Store Charges</p>
+                    <p className="text-xs text-slate-400 mt-1">Handling (Pending onwards) + Store</p>
                   </div>
                   <div className="bg-indigo-50 p-3 rounded-lg text-indigo-600">
                     <Tag className="w-6 h-6" />
@@ -1956,7 +1940,8 @@ export default function App() {
                 
                 const totalCodCollected = vendorDeliveredOrders.reduce((sum, o) => sum + (Number(o.totalCod) || 0), 0);
                 const totalHandlingFee = vendorActiveOrders.reduce((sum, o) => sum + (Number(o.tnHandlingFee) || 0), 0);
-                const totalStoreCharge = vendorActiveOrders.reduce((sum, o) => sum + (Number(o.tnStoreFee) || 0), 0);
+                
+                const totalStoreCharge = vendorDeliveredOrders.reduce((sum, o) => sum + calculateOrderStoreCharges(o), 0);
 
                 const netPayable = totalCodCollected - totalHandlingFee - totalStoreCharge;
 
@@ -2001,11 +1986,11 @@ export default function App() {
                         <span className="font-semibold text-slate-800">{totalCodCollected.toLocaleString()} Ks</span>
                       </div>
                       <div className="flex justify-between text-slate-600">
-                        <span>T&N Handling Fee Deduct:</span>
+                        <span>T&N Handling Fee Deduct (Active orders):</span>
                         <span className="font-semibold text-red-600">- {totalHandlingFee.toLocaleString()} Ks</span>
                       </div>
                       <div className="flex justify-between text-slate-600">
-                        <span>Warehouse Store Charges (Per-order days):</span>
+                        <span>Warehouse Store Charges (per voucher):</span>
                         <span className="font-semibold text-red-600">- {totalStoreCharge.toLocaleString()} Ks</span>
                       </div>
                       <div className="border-t pt-2 flex justify-between font-bold text-sm text-slate-900">
@@ -2143,7 +2128,7 @@ export default function App() {
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
               <div>
                 <h3 className="font-bold text-slate-800 text-sm">Cash Management & Voucher-based Settlement Ledger</h3>
-                <p className="text-xs text-slate-500">Record actual cash inflow (COD flow) and actual payout (Vendor payout automatically deducting handling & store charges per voucher)</p>
+                <p className="text-xs text-slate-500">Record actual cash inflow (COD flow by Delivery vouchers) and actual payout (Vendor payout by vouchers with auto-deducted handling fee & store charges)</p>
               </div>
 
               <div className="flex space-x-2">
@@ -2389,12 +2374,12 @@ export default function App() {
 
       </main>
 
-      {/* Advanced Cash Transaction Modal (Voucher-based COD & Vendor Payout Flow with Net Payable Validation & Per-voucher Fee Deduction) */}
+      {/* Advanced Cash Transaction Modal (Voucher-based COD & Vendor Payout Flow with auto-deducted Handling Fee & Store Charges per voucher) */}
       {showCashModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b pb-3">
-              <h3 className="font-bold text-slate-800 text-base">Add Cash Transaction (Voucher Settlement Flow)</h3>
+              <h3 className="font-bold text-slate-800 text-base">Add Cash Transaction (Voucher Flow)</h3>
               <button onClick={() => setShowCashModal(false)} className="text-slate-400 hover:text-slate-600 text-lg">✕</button>
             </div>
 
@@ -2411,7 +2396,7 @@ export default function App() {
                   className="w-full border border-slate-300 rounded-lg p-2 bg-white"
                 >
                   <option value="COD_IN">COD Flow (Delivery Collection)</option>
-                  <option value="VENDOR_OUT">Vendor Payout Flow (Settlement with Handling & Store Charges Deduct)</option>
+                  <option value="VENDOR_OUT">Vendor Payout Flow (Settlement with fees deducted)</option>
                 </select>
               </div>
 
@@ -2447,25 +2432,24 @@ export default function App() {
                 </div>
               )}
 
-              {/* Voucher Selection Table with Fee Deductions */}
+              {/* Voucher Selection Table */}
               {selectedPartnerId && (
                 <div className="space-y-2">
-                  <label className="block font-semibold text-slate-700">Select Outstanding Vouchers (Handling & Store Charges automatically deducted):</label>
+                  <label className="block font-semibold text-slate-700">Select Outstanding Vouchers for Actual Payment:</label>
                   <div className="border rounded-lg max-h-56 overflow-y-auto">
                     <table className="w-full text-left text-xs">
                       <thead className="bg-slate-100 text-slate-600 sticky top-0">
                         <tr>
-                          <th className="p-2 w-10 text-center">Select</th>
-                          <th className="p-2">Order ID</th>
-                          <th className="p-2">Customer / Details</th>
+                          <th className="p-2.5 w-10 text-center">Select</th>
+                          <th className="p-2.5">Order ID & Customer</th>
                           {cashFlowType === 'VENDOR_OUT' && (
                             <>
-                              <th className="p-2 text-right">COD (Ks)</th>
-                              <th className="p-2 text-right">Handling (Ks)</th>
-                              <th className="p-2 text-right">Store Chg (Ks)</th>
+                              <th className="p-2.5 text-right">COD</th>
+                              <th className="p-2.5 text-right">Handling</th>
+                              <th className="p-2.5 text-right">Store Chg</th>
                             </>
                           )}
-                          <th className="p-2 text-right">Net Payout (Ks)</th>
+                          <th className="p-2.5 text-right">{cashFlowType === 'COD_IN' ? 'COD Amount' : 'Net Payable'}</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y">
@@ -2476,7 +2460,7 @@ export default function App() {
                               const isChecked = selectedVoucherIds.includes(ord.id);
                               return (
                                 <tr key={ord.id} className="hover:bg-slate-50">
-                                  <td className="p-2 text-center">
+                                  <td className="p-2.5 text-center">
                                     <input 
                                       type="checkbox"
                                       checked={isChecked}
@@ -2489,9 +2473,11 @@ export default function App() {
                                       }}
                                     />
                                   </td>
-                                  <td className="p-2 font-bold text-indigo-600">{ord.id}</td>
-                                  <td className="p-2">{ord.customerName} ({ord.customerPhone})</td>
-                                  <td className="p-2 text-right font-semibold">{(Number(ord.totalCod) || 0).toLocaleString()} Ks</td>
+                                  <td className="p-2.5 font-bold text-indigo-600">
+                                    {ord.id}
+                                    <div className="text-[10px] font-normal text-slate-500">{ord.customerName} ({ord.customerPhone})</div>
+                                  </td>
+                                  <td className="p-2.5 text-right font-semibold">{(Number(ord.totalCod) || 0).toLocaleString()} Ks</td>
                                 </tr>
                               );
                             })
@@ -2502,12 +2488,11 @@ export default function App() {
                               const isChecked = selectedVoucherIds.includes(ord.id);
                               const cod = Number(ord.totalCod) || 0;
                               const handling = Number(ord.tnHandlingFee) || 0;
-                              const store = Number(ord.tnStoreFee) || 0;
-                              const netOrderVal = cod - handling - store;
-
+                              const storeChg = calculateOrderStoreCharges(ord);
+                              const netOrderVal = cod - handling - storeChg;
                               return (
                                 <tr key={ord.id} className="hover:bg-slate-50">
-                                  <td className="p-2 text-center">
+                                  <td className="p-2.5 text-center">
                                     <input 
                                       type="checkbox"
                                       checked={isChecked}
@@ -2520,12 +2505,14 @@ export default function App() {
                                       }}
                                     />
                                   </td>
-                                  <td className="p-2 font-bold text-indigo-600">{ord.id}</td>
-                                  <td className="p-2">{ord.customerName}</td>
-                                  <td className="p-2 text-right">{cod.toLocaleString()}</td>
-                                  <td className="p-2 text-right text-rose-600">-{handling.toLocaleString()}</td>
-                                  <td className="p-2 text-right text-rose-600">-{store.toLocaleString()}</td>
-                                  <td className="p-2 text-right font-bold text-emerald-600">{netOrderVal.toLocaleString()} Ks</td>
+                                  <td className="p-2.5 font-bold text-indigo-600">
+                                    {ord.id}
+                                    <div className="text-[10px] font-normal text-slate-500">{ord.customerName}</div>
+                                  </td>
+                                  <td className="p-2.5 text-right font-medium">{cod.toLocaleString()}</td>
+                                  <td className="p-2.5 text-right text-red-600">-{handling.toLocaleString()}</td>
+                                  <td className="p-2.5 text-right text-red-600">-{storeChg.toLocaleString()}</td>
+                                  <td className="p-2.5 text-right font-bold text-emerald-600">{netOrderVal.toLocaleString()} Ks</td>
                                 </tr>
                               );
                             })
@@ -2568,28 +2555,10 @@ export default function App() {
                         if (selectedVoucherIds.includes(o.id)) {
                           const cod = Number(o.totalCod) || 0;
                           const handling = Number(o.tnHandlingFee) || 0;
-                          const store = Number(o.tnStoreFee) || 0;
-                          totalAmount += (cod - handling - store);
+                          const storeChg = calculateOrderStoreCharges(o);
+                          totalAmount += (cod - handling - storeChg);
                         }
                       });
-
-                      // Validation: Do not exceed Vendor's Net Payable Balance
-                      const vendorObj = vendors.find(v => v.id === selectedPartnerId);
-                      if (vendorObj) {
-                        const vDelivered = orders.filter(o => o.vendorId === vendorObj.id && (o.status === 'Delivered' || o.status === 'Partial Return') && !o.cancelled);
-                        const vCod = vDelivered.reduce((s, o) => s + (Number(o.totalCod) || 0), 0);
-                        const vHandling = vDelivered.reduce((s, o) => s + (Number(o.tnHandlingFee) || 0), 0);
-                        const vStore = vDelivered.reduce((s, o) => s + (Number(o.tnStoreFee) || 0), 0);
-                        const prevPayouts = cashLedger
-                          .filter(c => c.type === 'VENDOR_OUT' && c.referenceId && c.referenceId.includes(vendorObj.id))
-                          .reduce((s, c) => s + c.amount, 0);
-                        const maxPayable = vCod - vHandling - vStore - prevPayouts;
-
-                        if (totalAmount > maxPayable) {
-                          alert(`သတိပေးချက်: ရွေးချယ်ထားသော ပမာဏ (${totalAmount.toLocaleString()} Ks) သည် ဤ Vendor ၏ လက်ကျန် Net Payable (${maxPayable.toLocaleString()} Ks) ထက် ကျော်လွန်နေသဖြင့် ပေးချေ၍မရပါ။`);
-                          return;
-                        }
-                      }
                     }
 
                     const cObj = {
@@ -2618,7 +2587,7 @@ export default function App() {
                   }}
                   className="w-1/2 bg-indigo-600 text-white py-2.5 rounded-lg font-semibold"
                 >
-                  Confirm Net Payout ({selectedVoucherIds.length} Vouchers)
+                  Confirm Actual Payment
                 </button>
               </div>
             </div>
