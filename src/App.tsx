@@ -175,6 +175,12 @@ export default function App() {
           if (Array.isArray(dataVendors)) setVendors(dataVendors);
         }
 
+        const resDeliveries = await fetch(`${API_BASE_URL}/api/deliveries`);
+        if (resDeliveries.ok) {
+          const dataDeliveries = await resDeliveries.json();
+          if (Array.isArray(dataDeliveries) && dataDeliveries.length > 0) setDeliveries(dataDeliveries);
+        }
+
         const resItems = await fetch(`${API_BASE_URL}/api/inventory`);
         if (resItems.ok) {
           const dataItems = await resItems.json();
@@ -413,12 +419,21 @@ export default function App() {
     }
   };
 
-  const handleSaveDelivery = (e) => {
+  const handleSaveDelivery = async (e) => {
     e.preventDefault();
     if (!newDelivery.name || !newDelivery.phone) return;
 
     if (editingDelivery) {
-      setDeliveries(deliveries.map(d => d.id === editingDelivery.id ? { ...d, ...newDelivery } : d));
+      const updatedObj = { ...editingDelivery, ...newDelivery };
+      try {
+        await fetch(`${API_BASE_URL}/api/deliveries/${editingDelivery.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatedObj)
+        });
+      } catch (e) {}
+
+      setDeliveries(deliveries.map(d => d.id === editingDelivery.id ? updatedObj : d));
       addLog(`Updated delivery service: ${newDelivery.name}`);
       setEditingDelivery(null);
     } else {
@@ -429,6 +444,15 @@ export default function App() {
         address: newDelivery.address,
         bankAccount: newDelivery.bankAccount
       };
+
+      try {
+        await fetch(`${API_BASE_URL}/api/deliveries`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(deliveryObj)
+        });
+      } catch (e) {}
+
       setDeliveries([...deliveries, deliveryObj]);
       addLog(`Registered new delivery service: ${deliveryObj.name}`);
     }
@@ -437,7 +461,7 @@ export default function App() {
     setNewDelivery({ name: '', phone: '', address: '', bankAccount: '' });
   };
 
-  const handleDeleteDelivery = (delId, delName) => {
+  const handleDeleteDelivery = async (delId, delName) => {
     const hasOrders = orders.some(o => o.deliveryService === delName && !o.cancelled);
     if (hasOrders) {
       alert('ဤ Delivery တွင် ဆက်စပ်အော်ဒါစာရင်းများ ရှိနေသေးသဖြင့် ဖျက်၍မရပါ သို့မဟုတ် Cancelled လုပ်ထားရန် လိုအပ်ပါသည်။');
@@ -445,6 +469,10 @@ export default function App() {
     }
 
     if (confirm(`Delivery "${delName}" ကို ဖျက်ရန် သေချာပါသလား?`)) {
+      try {
+        await fetch(`${API_BASE_URL}/api/deliveries/${delId}`, { method: 'DELETE' });
+      } catch (e) {}
+
       setDeliveries(deliveries.filter(d => d.id !== delId));
       addLog(`Deleted delivery service ID ${delId}`);
     }
@@ -567,7 +595,6 @@ export default function App() {
   const handleUpdateOrderStatus = async (orderId, newStatus, newTracking) => {
     const targetOrder = orders.find(o => o.id === orderId);
     
-    // Check if Staff tries to set Cancelled
     if (newStatus === 'Cancelled' && currentUser?.role !== 'Admin') {
       alert('ခွင့်ပြုချက်မရှိပါ: Cancelled အခြေအနေသို့ ပြောင်းလဲရန် Admin အဆင့် လိုအပ်ပါသည်။');
       return;
@@ -1350,7 +1377,6 @@ export default function App() {
                       .filter(o => o.id.toLowerCase().includes(searchTerm.toLowerCase()) || o.customerName.toLowerCase().includes(searchTerm.toLowerCase()))
                       .map(order => {
                         const vendor = vendors.find(v => v.id === order.vendorId);
-                        // Admin is never locked; Staff/Vendor are locked if Delivered or Cancelled (or vendor role)
                         const isLocked = currentUser.role === 'Vendor' || (currentUser.role !== 'Admin' && (order.status === 'Delivered' || order.status === 'Cancelled'));
                         const isSelected = selectedOrderIds.includes(order.id);
 
