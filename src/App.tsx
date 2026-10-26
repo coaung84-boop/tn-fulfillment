@@ -351,6 +351,20 @@ export default function App() {
     return totalStore;
   }
 
+  // Helper to collect all voucher IDs that have already been recorded in cash ledger transactions
+  const recordedVoucherIds = useMemo(() => {
+    const ids = new Set();
+    cashLedger.forEach(c => {
+      if (c.referenceId) {
+        const matches = c.referenceId.match(/TN-ORD-\d+/g);
+        if (matches) {
+          matches.forEach(id => ids.add(id));
+        }
+      }
+    });
+    return ids;
+  }, [cashLedger]);
+
   const stats = useMemo(() => {
     const totalOrders = scopedOrders.length;
     const pendingOrders = scopedOrders.filter(o => o.status === 'Pending' || o.status === 'In-Transit').length;
@@ -2374,7 +2388,7 @@ export default function App() {
 
       </main>
 
-      {/* Advanced Cash Transaction Modal (Voucher-based COD & Vendor Payout Flow with auto-deducted Handling Fee & Store Charges per voucher) */}
+      {/* Advanced Cash Transaction Modal (Voucher-based COD & Vendor Payout Flow with duplicate prevention) */}
       {showCashModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
@@ -2432,10 +2446,10 @@ export default function App() {
                 </div>
               )}
 
-              {/* Voucher Selection Table */}
+              {/* Voucher Selection Table (Filtered to exclude already recorded vouchers) */}
               {selectedPartnerId && (
                 <div className="space-y-2">
-                  <label className="block font-semibold text-slate-700">Select Outstanding Vouchers for Actual Payment:</label>
+                  <label className="block font-semibold text-slate-700">Select Outstanding Vouchers for Actual Payment (Already recorded vouchers are filtered out):</label>
                   <div className="border rounded-lg max-h-56 overflow-y-auto">
                     <table className="w-full text-left text-xs">
                       <thead className="bg-slate-100 text-slate-600 sticky top-0">
@@ -2455,7 +2469,7 @@ export default function App() {
                       <tbody className="divide-y">
                         {cashFlowType === 'COD_IN' ? (
                           orders
-                            .filter(o => o.deliveryService === selectedPartnerId && (o.status === 'Delivered' || o.status === 'Partial Return') && !o.cancelled)
+                            .filter(o => o.deliveryService === selectedPartnerId && (o.status === 'Delivered' || o.status === 'Partial Return') && !o.cancelled && !recordedVoucherIds.has(o.id))
                             .map(ord => {
                               const isChecked = selectedVoucherIds.includes(ord.id);
                               return (
@@ -2483,7 +2497,7 @@ export default function App() {
                             })
                         ) : (
                           orders
-                            .filter(o => o.vendorId === selectedPartnerId && (o.status === 'Delivered' || o.status === 'Partial Return') && !o.cancelled)
+                            .filter(o => o.vendorId === selectedPartnerId && (o.status === 'Delivered' || o.status === 'Partial Return') && !o.cancelled && !recordedVoucherIds.has(o.id))
                             .map(ord => {
                               const isChecked = selectedVoucherIds.includes(ord.id);
                               const cod = Number(ord.totalCod) || 0;
@@ -2520,6 +2534,9 @@ export default function App() {
                       </tbody>
                     </table>
                   </div>
+                  {orders.filter(o => (cashFlowType === 'COD_IN' ? o.deliveryService === selectedPartnerId : o.vendorId === selectedPartnerId) && (o.status === 'Delivered' || o.status === 'Partial Return') && !o.cancelled && !recordedVoucherIds.has(o.id)).length === 0 && (
+                    <p className="text-slate-400 text-center py-2">စာရင်းသွင်းရန် ကျန်ရှိသော Voucher မရှိတော့ပါ။ (အားလုံး စာရင်းသွင်းပြီးပါပြီ)</p>
+                  )}
                 </div>
               )}
 
