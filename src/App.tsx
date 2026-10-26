@@ -386,6 +386,41 @@ export default function App() {
     return 0;
   }
 
+  // Helper for Exporting Client-Facing Vendor Payout Statement Report
+  const exportVendorStatement = (vendorId) => {
+    const vendor = vendors.find(v => v.id === vendorId);
+    if (!vendor) return;
+    const vOrders = orders.filter(o => o.vendorId === vendorId && (o.status === 'Delivered' || o.status === 'Partial Return') && !o.cancelled);
+    
+    const reportRows = vOrders.map(o => ({
+      "Order ID": o.id,
+      "Date": o.createdAt,
+      "Customer Name": o.customerName,
+      "Customer Phone": o.customerPhone,
+      "Delivery Service": o.deliveryService,
+      "COD Amount (Ks)": o.totalCod,
+      "Handling Fee (Ks)": o.tnHandlingFee,
+      "Net Payable (Ks)": (Number(o.totalCod) || 0) - (Number(o.tnHandlingFee) || 0)
+    }));
+
+    if (reportRows.length === 0) {
+      alert('ဤ Vendor အတွက် Statement ထုတ်ရန် Delivered အော်ဒါစာရင်း မရှိသေးပါ။');
+      return;
+    }
+
+    const headers = Object.keys(reportRows[0]).join("\t");
+    const rows = reportRows.map(r => Object.values(r).join("\t")).join("\n");
+    const blob = new Blob([headers + "\n" + rows], { type: 'application/vnd.ms-excel' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `TN_Vendor_Payout_Statement_${vendor.name}_${Date.now()}.xls`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    addLog(`Exported official client Vendor Statement report for ${vendor.name}`);
+  };
+
   const handleExportBackup = () => {
     const backupData = {
       version: '1.0',
@@ -1070,7 +1105,7 @@ export default function App() {
               { id: 'orders', label: 'Orders & Vouchers', icon: ShoppingCart },
               { id: 'inventory', label: 'Vendor Inventory', icon: Package },
               { id: 'returns', label: 'Returns & Damage', icon: RotateCcw },
-              { id: 'settlements', label: 'Vendors', icon: CreditCard }, // Updated icon & name
+              { id: 'settlements', label: 'Vendors', icon: CreditCard }, 
               { id: 'deliveries', label: 'Delivery Services', icon: Truck },
               { id: 'cash_ledger', label: 'Cash Management', icon: DollarSign },
               { id: 'users', label: 'User Management', icon: Users, adminOnly: true },
@@ -1845,14 +1880,14 @@ export default function App() {
           </div>
         )}
 
-        {/* Vendors Tab (Renamed from Vendors (Financial)) */}
+        {/* Vendors Tab */}
         {activeTab === 'settlements' && currentUser.role !== 'Vendor' && (
           <div className="space-y-4">
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
               <div>
-                <h3 className="font-bold text-slate-800 text-sm">Vendors Management</h3>
+                <h3 className="font-bold text-slate-800 text-sm">Vendors Management & Client Payout Reports</h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Manage vendors, bank accounts, net payable calculations, and statements. (Payouts managed via Cash Management)
+                  Manage vendors, bank accounts, net payable calculations, and official client payout statements.
                 </p>
               </div>
 
@@ -1938,16 +1973,26 @@ export default function App() {
                       </div>
                     </div>
 
-                    <button 
-                      onClick={() => {
-                        exportSelectedToExcel(`settlement_${vendor.id}`, vendorDeliveredOrders, vendorDeliveredOrders.map(o => o.id));
-                        addLog(`Exported settlement statement for Vendor ${vendor.name}`);
-                      }}
-                      className="w-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold py-2 rounded-lg transition-colors flex items-center justify-center space-x-1"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      <span>Export Statement Report (.xls)</span>
-                    </button>
+                    <div className="flex space-x-2">
+                      <button 
+                        onClick={() => exportVendorStatement(vendor.id)}
+                        className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold py-2 rounded-lg transition-colors flex items-center justify-center space-x-1 shadow-sm"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Client Payout Report (.xls)</span>
+                      </button>
+                      
+                      <button 
+                        onClick={() => {
+                          exportSelectedToExcel(`settlement_${vendor.id}`, vendorDeliveredOrders, vendorDeliveredOrders.map(o => o.id));
+                          addLog(`Exported full settlement statement for Vendor ${vendor.name}`);
+                        }}
+                        className="bg-slate-900 hover:bg-slate-800 text-white text-xs px-3 py-2 rounded-lg transition-colors flex items-center justify-center"
+                        title="Full Order Details Excel"
+                      >
+                        <FileSpreadsheet className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -2057,7 +2102,7 @@ export default function App() {
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
               <div>
                 <h3 className="font-bold text-slate-800 text-sm">Cash Management & Voucher-based Settlement Ledger</h3>
-                <p className="text-xs text-slate-500">Record actual cash inflow (COD flow by Delivery vouchers) and actual payout (Vendor payout by vouchers)</p>
+                <p className="text-xs text-slate-500">Record actual cash inflow (COD flow by Delivery vouchers) and actual payout (Vendor payout by vouchers linked with Net Payables)</p>
               </div>
 
               <div className="flex space-x-2">
@@ -2303,7 +2348,7 @@ export default function App() {
 
       </main>
 
-      {/* Advanced Cash Transaction Modal (Voucher-based COD & Vendor Payout Flow) */}
+      {/* Advanced Cash Transaction Modal (Voucher-based COD & Vendor Payout Flow with Net Payable Validation) */}
       {showCashModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
@@ -2469,6 +2514,26 @@ export default function App() {
                           totalAmount += (Number(o.totalCod) || 0) - (Number(o.tnHandlingFee) || 0);
                         }
                       });
+
+                      // Validation: Do not exceed Vendor's Net Payable Balance
+                      const vendorObj = vendors.find(v => v.id === selectedPartnerId);
+                      if (vendorObj) {
+                        const vDelivered = orders.filter(o => o.vendorId === vendorObj.id && (o.status === 'Delivered' || o.status === 'Partial Return') && !o.cancelled);
+                        const vActive = orders.filter(o => o.vendorId === vendorObj.id && !o.cancelled);
+                        const vCod = vDelivered.reduce((s, o) => s + (Number(o.totalCod) || 0), 0);
+                        const vHandling = vActive.reduce((s, o) => s + (Number(o.tnHandlingFee) || 0), 0);
+                        const vItems = items.filter(i => i.vendorId === vendorObj.id);
+                        const vStore = vItems.reduce((s, i) => s + calculateStoreCharge(i), 0);
+                        const prevPayouts = cashLedger
+                          .filter(c => c.type === 'VENDOR_OUT' && c.referenceId && c.referenceId.includes(vendorObj.id))
+                          .reduce((s, c) => s + c.amount, 0);
+                        const maxPayable = vCod - vHandling - vStore - prevPayouts;
+
+                        if (totalAmount > maxPayable) {
+                          alert(`သတိပေးချက်: ရွေးချယ်ထားသော ပမာဏ (${totalAmount.toLocaleString()} Ks) သည် ဤ Vendor ၏ လက်ကျန် Net Payable (${maxPayable.toLocaleString()} Ks) ထက် ကျော်လွန်နေသဖြင့် ပေးချေ၍မရပါ။`);
+                          return;
+                        }
+                      }
                     }
 
                     const cObj = {
