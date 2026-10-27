@@ -1171,7 +1171,7 @@ export default function App() {
                     className="w-full text-left px-4 py-2 hover:bg-rose-50 text-rose-600 font-semibold flex items-center space-x-2"
                   >
                     <LogOut className="w-3.5 h-3.5" />
-                    <span>Lockout / Logout</span>
+                    <span>Logout</span>
                   </button>
                 </div>
               )}
@@ -1940,7 +1940,7 @@ export default function App() {
           </div>
         )}
 
-        {/* Vendors Tab */}
+        {/* Vendors Tab (Updated with VENDOR_OUT cash integration) */}
         {activeTab === 'settlements' && currentUser.role !== 'Vendor' && (
           <div className="space-y-4">
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
@@ -1966,7 +1966,15 @@ export default function App() {
                 const totalCodCollected = vendorDeliveredOrders.reduce((sum, o) => sum + (Number(o.totalCod) || 0), 0);
                 const totalHandlingFee = vendorActiveOrders.reduce((sum, o) => sum + (Number(o.tnHandlingFee) || 0), 0);
                 const totalStoreCharge = vendorDeliveredOrders.reduce((sum, o) => sum + calculateOrderStoreCharges(o), 0);
-                const netPayable = totalCodCollected - totalHandlingFee - totalStoreCharge;
+                
+                const initialNetPayable = totalCodCollected - totalHandlingFee - totalStoreCharge;
+
+                // Cash Management VENDOR_OUT integration
+                const vendorPaidOut = cashLedger
+                  .filter(c => c.type === 'VENDOR_OUT' && c.referenceId && c.referenceId.includes(vendor.id))
+                  .reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
+
+                const netPayable = initialNetPayable - vendorPaidOut;
 
                 return (
                   <div key={vendor.id} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
@@ -1991,7 +1999,9 @@ export default function App() {
                       <div className="flex justify-between text-slate-600"><span>Delivered COD Collected:</span><span className="font-semibold text-slate-800">{totalCodCollected.toLocaleString()} Ks</span></div>
                       <div className="flex justify-between text-slate-600"><span>T&N Handling Fee Deduct:</span><span className="font-semibold text-red-600">- {totalHandlingFee.toLocaleString()} Ks</span></div>
                       <div className="flex justify-between text-slate-600"><span>Warehouse Store Charges:</span><span className="font-semibold text-red-600">- {totalStoreCharge.toLocaleString()} Ks</span></div>
-                      <div className="border-t pt-2 flex justify-between font-bold text-sm text-slate-900"><span>Net Balance Payable:</span><span className="text-emerald-600">{netPayable.toLocaleString()} Ks</span></div>
+                      <div className="flex justify-between text-slate-600 border-t pt-1"><span>Net Payable (Initial):</span><span className="font-semibold text-slate-800">{initialNetPayable.toLocaleString()} Ks</span></div>
+                      <div className="flex justify-between text-slate-600"><span>Vendor Out Paid (Cash Management):</span><span className="font-semibold text-rose-600">- {vendorPaidOut.toLocaleString()} Ks</span></div>
+                      <div className="border-t pt-2 flex justify-between font-bold text-sm text-slate-900"><span>Remaining Balance Payable:</span><span className="text-emerald-600">{netPayable.toLocaleString()} Ks</span></div>
                     </div>
 
                     <div className="flex space-x-2">
@@ -2009,7 +2019,7 @@ export default function App() {
           </div>
         )}
 
-        {/* Deliveries Tab */}
+        {/* Deliveries Tab (Updated with COD_IN cash integration) */}
         {activeTab === 'deliveries' && currentUser.role !== 'Vendor' && (
           <div className="space-y-4">
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
@@ -2030,7 +2040,13 @@ export default function App() {
                 const delOrders = orders.filter(o => o.deliveryService === del.name && !o.cancelled);
                 const sentList = delOrders.filter(o => o.status === 'Delivered' || o.status === 'Partial Return');
                 const pendingList = delOrders.filter(o => o.status === 'Pending' || o.status === 'In-Transit');
-                const codReceivable = sentList.filter(o => o.codCollected).reduce((sum, o) => sum + (Number(o.totalCod) || 0), 0);
+                
+                // COD Receivable updated by Cash Management COD_IN updates
+                const totalDeliveredCod = sentList.reduce((sum, o) => sum + (Number(o.totalCod) || 0), 0);
+                const collectedCod = sentList
+                  .filter(o => codCollectedVoucherIds.has(o.id))
+                  .reduce((sum, o) => sum + (Number(o.totalCod) || 0), 0);
+                const codReceivable = totalDeliveredCod - collectedCod;
 
                 return (
                   <div key={del.id} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
@@ -2054,7 +2070,9 @@ export default function App() {
                     <div className="space-y-2 text-xs">
                       <div className="flex justify-between text-slate-600"><span>စာရင်းပို့ပြီး (Delivered Orders):</span><span className="font-bold text-emerald-600">{sentList.length} Waybills</span></div>
                       <div className="flex justify-between text-slate-600"><span>ပို့ရန်ကျန်စာရင်း (Pending / In-Transit):</span><span className="font-bold text-amber-600">{pendingList.length} Waybills</span></div>
-                      <div className="flex justify-between text-slate-600"><span>ရရန်ရှိ COD စာရင်း (COD Receivable):</span><span className="font-bold text-slate-800">{codReceivable.toLocaleString()} Ks</span></div>
+                      <div className="flex justify-between text-slate-600"><span>စုစုပေါင်း Delivered COD:</span><span className="font-semibold text-slate-800">{totalDeliveredCod.toLocaleString()} Ks</span></div>
+                      <div className="flex justify-between text-slate-600"><span>COD Collected (COD_IN Cash):</span><span className="font-semibold text-emerald-600">- {collectedCod.toLocaleString()} Ks</span></div>
+                      <div className="border-t pt-1 flex justify-between font-bold text-sm text-slate-900"><span>ရရန်ရှိ COD စာရင်း (COD Receivable):</span><span className="text-indigo-600">{codReceivable.toLocaleString()} Ks</span></div>
                     </div>
 
                     <button onClick={() => { exportSelectedToExcel(`delivery_${del.id}`, delOrders, delOrders.map(o => o.id)); addLog(`Exported delivery report (.xls) for ${del.name}`); }} className="w-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold py-2 rounded-lg transition-colors flex items-center justify-center space-x-1">
@@ -2262,7 +2280,7 @@ export default function App() {
 
       </main>
 
-      {/* EDIT INVENTORY ITEM MODAL (Full editing form for Today's stock-in) */}
+      {/* EDIT INVENTORY ITEM MODAL */}
       {showEditItemModal && editingInventoryItem && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
@@ -2334,7 +2352,7 @@ export default function App() {
         </div>
       )}
 
-      {/* EDIT RETURN MODAL (Allows editing Item Name & Quantity with stock adjustment) */}
+      {/* EDIT RETURN MODAL */}
       {showEditReturnModal && editingReturnItem && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
@@ -2349,7 +2367,6 @@ export default function App() {
               const newQty = Number(editReturnForm.qty) || 0;
               const qtyDiff = newQty - oldQty;
 
-              // Adjust stock in inventory if itemId is linked
               if (editingReturnItem.itemId && qtyDiff !== 0) {
                 setItems(prev => prev.map(i => {
                   if (i.id === editingReturnItem.itemId) {
