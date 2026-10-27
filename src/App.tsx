@@ -118,7 +118,7 @@ export default function App() {
 
   const [newUser, setNewUser] = useState({ username: '', password: '', name: '', role: 'Staff', vendorId: '' });
   const [newVendor, setNewVendor] = useState({ name: '', phone: '', address: '', bankAccount: '' });
-  const [newDelivery, setNewDelivery] = useState({ name: '', phone: '', address: '', bankAccount: '' });
+  const [newDelivery, setNewDelivery] = useState({ id: '', name: '', phone: '', address: '', bankAccount: '' });
 
   const [isExistingItemMode, setIsExistingItemMode] = useState(true);
   const [newItem, setNewItem] = useState({ 
@@ -138,7 +138,7 @@ export default function App() {
     customerName: '',
     customerPhone: '',
     deliveryAddress: '',
-    deliveryService: 'Royal Express',
+    deliveryServiceId: '',
     trackingNo: '',
     deliveryFee: 0,
     items: [{ itemId: '', qty: 1, discount: 0 }]
@@ -243,6 +243,17 @@ export default function App() {
     }
   };
 
+  // Dynamic Delivery Name Lookup to support edits instantly across tables & vouchers
+  const getDeliveryName = (order) => {
+    if (order.deliveryServiceId) {
+      const found = deliveries.find(d => d.id === order.deliveryServiceId);
+      if (found) return found.name;
+    }
+    const foundByName = deliveries.find(d => d.name === order.deliveryService);
+    if (foundByName) return foundByName.name;
+    return order.deliveryService || 'Unassigned';
+  };
+
   const handleCustomerPhoneChange = (phoneVal) => {
     setNewOrder(prev => {
       const updated = { ...prev, customerPhone: phoneVal };
@@ -307,7 +318,7 @@ export default function App() {
       res = res.filter(o => o.vendorId === currentUser.vendorId);
     }
     if (deliveryFilter !== 'ALL') {
-      res = res.filter(o => o.deliveryService === deliveryFilter);
+      res = res.filter(o => getDeliveryName(o) === deliveryFilter || o.deliveryServiceId === deliveryFilter);
     }
     if (orderSearchVal.trim()) {
       const q = orderSearchVal.toLowerCase();
@@ -318,11 +329,11 @@ export default function App() {
       } else if (orderSearchMode === 'VENDOR') {
         res = res.filter(o => o.vendorId === orderSearchVal || (vendors.find(v => v.id === o.vendorId)?.name.toLowerCase().includes(q)));
       } else if (orderSearchMode === 'DELIVERY') {
-        res = res.filter(o => o.deliveryService.toLowerCase().includes(q));
+        res = res.filter(o => getDeliveryName(o).toLowerCase().includes(q));
       }
     }
     return res;
-  }, [orders, currentUser, deliveryFilter, orderSearchMode, orderSearchVal, vendors]);
+  }, [orders, currentUser, deliveryFilter, orderSearchMode, orderSearchVal, vendors, deliveries]);
 
   // Scoped Returns with Unified Search
   const scopedReturns = useMemo(() => {
@@ -363,13 +374,12 @@ export default function App() {
 
   function calculateStoreCharge(item, targetDate = new Date()) {
     const vendor = vendors.find(v => v.id === item.vendorId);
-    if (!vendor) return 0;
     
     const stockIn = new Date(item.stockInDate);
     const diffDays = Math.floor((targetDate.getTime() - stockIn.getTime()) / (1000 * 60 * 60 * 24));
     
-    const freeDays = item.freeDays !== undefined ? item.freeDays : vendor.freeStorageDays;
-    const dailyFee = item.storeChargePerDay !== undefined ? item.storeChargePerDay : vendor.dailyStoreFee;
+    const freeDays = item.freeDays !== undefined ? Number(item.freeDays) : (vendor ? vendor.freeStorageDays : 7);
+    const dailyFee = item.storeChargePerDay !== undefined ? Number(item.storeChargePerDay) : (vendor ? vendor.dailyStoreFee : 30);
 
     if (diffDays > freeDays) {
       const extraDays = diffDays - freeDays;
@@ -386,8 +396,8 @@ export default function App() {
       if (stockItem) {
         const stockIn = new Date(stockItem.stockInDate);
         const diffDays = Math.floor((orderDate.getTime() - stockIn.getTime()) / (1000 * 60 * 60 * 24));
-        const freeDays = stockItem.freeDays !== undefined ? stockItem.freeDays : 7;
-        const dailyFee = stockItem.storeChargePerDay !== undefined ? stockItem.storeChargePerDay : 30;
+        const freeDays = stockItem.freeDays !== undefined ? Number(stockItem.freeDays) : 7;
+        const dailyFee = stockItem.storeChargePerDay !== undefined ? Number(stockItem.storeChargePerDay) : 30;
         if (diffDays > freeDays) {
           const extraDays = diffDays - freeDays;
           totalStore += extraDays * dailyFee * ordItem.qty;
@@ -410,7 +420,7 @@ export default function App() {
 
   const deliveryPerformanceStats = useMemo(() => {
     return deliveries.map(d => {
-      const dOrders = orders.filter(o => o.deliveryService === d.name && !o.cancelled);
+      const dOrders = orders.filter(o => (o.deliveryServiceId === d.id || getDeliveryName(o) === d.name) && !o.cancelled);
       const total = dOrders.length;
       const delivered = dOrders.filter(o => o.status === 'Delivered').length;
       const returned = dOrders.filter(o => o.status === 'Delivery Return' || o.status === 'Partial Return').length;
@@ -467,7 +477,7 @@ export default function App() {
         "Date": o.createdAt,
         "Customer Name": o.customerName,
         "Customer Phone": o.customerPhone,
-        "Delivery Service": o.deliveryService,
+        "Delivery Service": getDeliveryName(o),
         "COD Amount (Ks)": cod,
         "Handling Fee (Ks)": handlingFee,
         "Store Charges (Ks)": storeCharge,
@@ -644,6 +654,13 @@ export default function App() {
     if (editingDelivery) {
       const updatedObj = { ...editingDelivery, ...newDelivery };
       setDeliveries(deliveries.map(d => d.id === editingDelivery.id ? updatedObj : d));
+      // Update existing order records with updated delivery service name
+      setOrders(prev => prev.map(o => {
+        if (o.deliveryServiceId === editingDelivery.id || o.deliveryService === editingDelivery.name) {
+          return { ...o, deliveryService: newDelivery.name, deliveryServiceId: editingDelivery.id };
+        }
+        return o;
+      }));
       addLog(`Updated delivery service: ${newDelivery.name}`);
       setEditingDelivery(null);
     } else {
@@ -658,11 +675,11 @@ export default function App() {
       addLog(`Registered new delivery service: ${deliveryObj.name}`);
     }
     setShowDeliveryModal(false);
-    setNewDelivery({ name: '', phone: '', address: '', bankAccount: '' });
+    setNewDelivery({ id: '', name: '', phone: '', address: '', bankAccount: '' });
   };
 
   const handleDeleteDelivery = async (delId, delName) => {
-    const hasOrders = orders.some(o => o.deliveryService === delName && !o.cancelled);
+    const hasOrders = orders.some(o => (o.deliveryServiceId === delId || o.deliveryService === delName) && !o.cancelled);
     if (hasOrders) {
       alert('ဤ Delivery တွင် ဆက်စပ်အော်ဒါစာရင်းများ ရှိနေသေးသဖြင့် ဖျက်၍မရပါ။');
       return;
@@ -699,6 +716,10 @@ export default function App() {
     e.preventDefault();
     if (!newOrder.vendorId || newOrder.items.length === 0) return;
 
+    const matchedDelivery = deliveries.find(d => d.id === newOrder.deliveryServiceId || d.name === newOrder.deliveryServiceId);
+    const selectedDeliveryName = matchedDelivery ? matchedDelivery.name : (newOrder.deliveryServiceId || 'Royal Express');
+    const selectedDeliveryId = matchedDelivery ? matchedDelivery.id : '';
+
     let itemTotal = 0;
     const orderItems = newOrder.items.map(it => {
       const itemData = items.find(i => i.id === it.itemId);
@@ -721,7 +742,8 @@ export default function App() {
       customerName: newOrder.customerName,
       customerPhone: newOrder.customerPhone,
       deliveryAddress: newOrder.deliveryAddress,
-      deliveryService: newOrder.deliveryService,
+      deliveryService: selectedDeliveryName,
+      deliveryServiceId: selectedDeliveryId,
       trackingNo: newOrder.trackingNo || 'PENDING',
       status: 'Pending',
       cancelled: false,
@@ -753,6 +775,7 @@ export default function App() {
 
   const handleUpdateOrderStatus = async (orderId, newStatus, newTracking) => {
     const targetOrder = orders.find(o => o.id === orderId);
+    if (!targetOrder) return;
     
     if (codCollectedVoucherIds.has(orderId)) {
       alert('ဤ Voucher သည် COD Cash အဝင်စာရင်း (COD Flow) ပြီးစီးသွားပြီဖြစ်သဖြင့် Status ပြောင်းလဲ၍မရတော့ပါ။');
@@ -764,7 +787,7 @@ export default function App() {
       return;
     }
 
-    if (targetOrder && targetOrder.status === 'Delivered' && currentUser?.role !== 'Admin') {
+    if (targetOrder.status === 'Delivered' && currentUser?.role !== 'Admin') {
       alert('မေတ္တာရပ်ခံချက်: Delivered ဖြစ်ပြီးသား စာရင်းများကို Admin သာ ပြင်ဆင်ခွင့်ရှိပါသည်။');
       return;
     }
@@ -787,6 +810,17 @@ export default function App() {
     const isDelivered = newStatus === 'Delivered';
     const isCancelled = newStatus === 'Cancelled';
     const isDeliveryReturn = newStatus === 'Delivery Return';
+
+    // Restore stock to inventory if order is CANCELLED
+    if (isCancelled && !targetOrder.cancelled) {
+      for (const ordItem of targetOrder.items) {
+        const stockItem = items.find(i => i.id === ordItem.itemId);
+        if (stockItem) {
+          setItems(prev => prev.map(i => i.id === stockItem.id ? { ...i, quantity: (Number(i.quantity) || 0) + (Number(ordItem.qty) || 0) } : i));
+        }
+      }
+      addLog(`Cancelled Order ${orderId}: Restored stock quantities back to Inventory.`);
+    }
 
     const updatedItems = targetOrder.items.map(it => ({
       ...it,
@@ -1458,7 +1492,19 @@ export default function App() {
 
                 {currentUser.role !== 'Vendor' && (
                   <button 
-                    onClick={() => setShowOrderModal(true)}
+                    onClick={() => {
+                      setNewOrder({
+                        vendorId: '',
+                        customerName: '',
+                        customerPhone: '',
+                        deliveryAddress: '',
+                        deliveryServiceId: deliveries[0]?.id || '',
+                        trackingNo: '',
+                        deliveryFee: 0,
+                        items: [{ itemId: '', qty: 1, discount: 0 }]
+                      });
+                      setShowOrderModal(true);
+                    }}
                     className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-4 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm transition-colors"
                   >
                     <Plus className="w-4 h-4" />
@@ -1486,6 +1532,7 @@ export default function App() {
                   <tbody className="divide-y divide-slate-100">
                     {scopedOrders.map(order => {
                       const vendor = vendors.find(v => v.id === order.vendorId);
+                      const currentDeliveryName = getDeliveryName(order);
                       const isCodDone = codCollectedVoucherIds.has(order.id);
                       const isLocked = currentUser.role === 'Vendor' || isCodDone || (currentUser.role !== 'Admin' && (order.status === 'Delivered' || order.status === 'Cancelled'));
                       const isSelected = selectedOrderIds.includes(order.id);
@@ -1500,7 +1547,7 @@ export default function App() {
                           </td>
                           <td className="p-3 font-medium text-slate-700">{vendor ? vendor.name : order.vendorId}</td>
                           <td className="p-3"><p className="font-semibold text-slate-800">{order.customerName}</p><p className="text-slate-500">{order.customerPhone}</p></td>
-                          <td className="p-3"><p className="font-semibold text-slate-700">{order.deliveryService}</p><p className="text-slate-400 font-mono text-[10px]">Trk: {order.trackingNo}</p></td>
+                          <td className="p-3"><p className="font-semibold text-slate-700">{currentDeliveryName}</p><p className="text-slate-400 font-mono text-[10px]">Trk: {order.trackingNo}</p></td>
                           <td className="p-3 font-bold text-slate-800">{(Number(order.totalCod) || 0).toLocaleString()} Ks</td>
                           <td className="p-3">
                             <select 
@@ -1966,7 +2013,7 @@ export default function App() {
               </div>
 
               {currentUser.role === 'Admin' && (
-                <button onClick={() => { setEditingDelivery(null); setNewDelivery({ name: '', phone: '', address: '', bankAccount: '' }); setShowDeliveryModal(true); }} className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-4 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm">
+                <button onClick={() => { setEditingDelivery(null); setNewDelivery({ id: '', name: '', phone: '', address: '', bankAccount: '' }); setShowDeliveryModal(true); }} className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-4 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm">
                   <Plus className="w-4 h-4 mr-1" /><span>Register New Delivery Service</span>
                 </button>
               )}
@@ -1974,7 +2021,7 @@ export default function App() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {deliveries.map(del => {
-                const delOrders = orders.filter(o => o.deliveryService === del.name && !o.cancelled);
+                const delOrders = orders.filter(o => (o.deliveryServiceId === del.id || getDeliveryName(o) === del.name) && !o.cancelled);
                 const sentList = delOrders.filter(o => o.status === 'Delivered' || o.status === 'Partial Return');
                 const pendingList = delOrders.filter(o => o.status === 'Pending' || o.status === 'In-Transit');
                 
@@ -1996,7 +2043,7 @@ export default function App() {
                         <span className="bg-indigo-50 text-indigo-700 font-bold text-xs px-2.5 py-1 rounded-full">{del.id}</span>
                         {currentUser.role === 'Admin' && (
                           <div className="mt-2 text-right space-x-2">
-                            <button onClick={() => { setEditingDelivery(del); setNewDelivery({ name: del.name, phone: del.phone, address: del.address, bankAccount: del.bankAccount }); setShowDeliveryModal(true); }} className="text-xs text-indigo-600 hover:underline font-semibold">Edit</button>
+                            <button onClick={() => { setEditingDelivery(del); setNewDelivery({ id: del.id, name: del.name, phone: del.phone, address: del.address, bankAccount: del.bankAccount }); setShowDeliveryModal(true); }} className="text-xs text-indigo-600 hover:underline font-semibold">Edit</button>
                             <button onClick={() => handleDeleteDelivery(del.id, del.name)} className="text-xs text-rose-600 hover:underline font-semibold">Delete</button>
                           </div>
                         )}
@@ -2279,6 +2326,25 @@ export default function App() {
                 </div>
               </div>
 
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Free Storage Days</label>
+                  <input 
+                    type="number" value={editInventoryForm.freeDays}
+                    onChange={(e) => setEditInventoryForm({ ...editInventoryForm, freeDays: e.target.value })}
+                    className="w-full border border-slate-300 rounded-lg p-2"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Daily Store Charge (Ks/day)</label>
+                  <input 
+                    type="number" value={editInventoryForm.storeChargePerDay}
+                    onChange={(e) => setEditInventoryForm({ ...editInventoryForm, storeChargePerDay: e.target.value })}
+                    className="w-full border border-slate-300 rounded-lg p-2"
+                  />
+                </div>
+              </div>
+
               <div className="pt-3 flex space-x-2">
                 <button type="button" onClick={() => setShowEditItemModal(false)} className="w-1/2 bg-slate-100 py-2.5 rounded-lg font-semibold">Cancel</button>
                 <button type="submit" className="w-1/2 bg-indigo-600 text-white py-2.5 rounded-lg font-semibold">Save Changes</button>
@@ -2426,7 +2492,7 @@ export default function App() {
                       <tbody className="divide-y">
                         {cashFlowType === 'COD_IN' ? (
                           orders
-                            .filter(o => o.deliveryService === selectedPartnerId && (o.status === 'Delivered' || o.status === 'Partial Return') && !o.cancelled && !codCollectedVoucherIds.has(o.id))
+                            .filter(o => (o.deliveryServiceId === selectedPartnerId || getDeliveryName(o) === selectedPartnerId) && (o.status === 'Delivered' || o.status === 'Partial Return') && !o.cancelled && !codCollectedVoucherIds.has(o.id))
                             .map(ord => {
                               const isChecked = selectedVoucherIds.includes(ord.id);
                               return (
@@ -2665,9 +2731,10 @@ export default function App() {
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Delivery Service</label>
-                  <select value={newOrder.deliveryService} onChange={(e) => setNewOrder({ ...newOrder, deliveryService: e.target.value })} className="w-full border border-slate-300 rounded-lg p-2">
-                    {deliveries.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+                  <label className="block font-semibold text-slate-700 mb-1">Delivery Service *</label>
+                  <select required value={newOrder.deliveryServiceId} onChange={(e) => setNewOrder({ ...newOrder, deliveryServiceId: e.target.value })} className="w-full border border-slate-300 rounded-lg p-2">
+                    <option value="">-- Select Delivery --</option>
+                    {deliveries.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                   </select>
                 </div>
                 <div>
@@ -2735,9 +2802,9 @@ export default function App() {
                   damagedQty: 0,
                   stockInDate: todayStr,
                   sku: `${targetExisting.sku}-RESTOCK`,
-                  handlingFee: targetExisting.handlingFee,
-                  storeChargePerDay: targetExisting.storeChargePerDay,
-                  freeDays: targetExisting.freeDays
+                  handlingFee: Number(newItem.handlingFee) || targetExisting.handlingFee || 500,
+                  storeChargePerDay: Number(newItem.storeChargePerDay) || targetExisting.storeChargePerDay || 30,
+                  freeDays: Number(newItem.freeDays) || targetExisting.freeDays || 7
                 };
                 setItems([newBatchItem, ...items]);
                 addLog(`Added restock batch of ${addQty} pcs for ${targetExisting.name}`);
@@ -2782,7 +2849,17 @@ export default function App() {
               {isExistingItemMode ? (
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">Select Existing Item *</label>
-                  <select required value={newItem.existingItemId} onChange={(e) => { const selectedId = e.target.value; const found = items.find(i => i.id === selectedId); setNewItem({ ...newItem, existingItemId: selectedId, price: found ? found.price : '' }); }} className="w-full border border-slate-300 rounded-lg p-2 bg-white">
+                  <select required value={newItem.existingItemId} onChange={(e) => { 
+                    const selectedId = e.target.value; 
+                    const found = items.find(i => i.id === selectedId); 
+                    setNewItem({ 
+                      ...newItem, 
+                      existingItemId: selectedId, 
+                      price: found ? found.price : '',
+                      storeChargePerDay: found ? (found.storeChargePerDay || '30') : '30',
+                      freeDays: found ? (found.freeDays || '7') : '7'
+                    }); 
+                  }} className="w-full border border-slate-300 rounded-lg p-2 bg-white">
                     <option value="">-- Choose Item Stock --</option>
                     {items.filter(i => newItem.vendorId && i.vendorId === newItem.vendorId).map(i => <option key={i.id} value={i.id}>{i.name} (Batch Date: {i.stockInDate})</option>)}
                   </select>
@@ -2807,6 +2884,17 @@ export default function App() {
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">Handling Fee (Ks)</label>
                   <input type="number" value={newItem.handlingFee} onChange={(e) => setNewItem({ ...newItem, handlingFee: e.target.value })} className="w-full border border-slate-300 rounded-lg p-2" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Free Storage Days</label>
+                  <input type="number" value={newItem.freeDays} onChange={(e) => setNewItem({ ...newItem, freeDays: e.target.value })} placeholder="7" className="w-full border border-slate-300 rounded-lg p-2" />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Daily Store Charge (Ks/day)</label>
+                  <input type="number" value={newItem.storeChargePerDay} onChange={(e) => setNewItem({ ...newItem, storeChargePerDay: e.target.value })} placeholder="30" className="w-full border border-slate-300 rounded-lg p-2" />
                 </div>
               </div>
 
@@ -2971,6 +3059,7 @@ export default function App() {
               <p className="font-bold text-slate-800">{selectedOrder.customerName}</p>
               <p className="text-slate-700">{selectedOrder.customerPhone}</p>
               <p className="text-slate-500 text-[10px]">{selectedOrder.deliveryAddress}</p>
+              <p className="text-indigo-600 font-bold text-[11px] pt-1">Delivery: {getDeliveryName(selectedOrder)}</p>
             </div>
 
             <div className="border-b pb-2">
