@@ -29,9 +29,9 @@ const INITIAL_DELIVERIES = [
 ];
 
 const INITIAL_ITEMS = [
-  { id: 'ITM-001', vendorId: 'VND-101', name: 'Matte Lipstick (Red)', category: 'Beauty', price: 12000, cost: 0, quantity: 45, damagedQty: 2, stockInDate: '2026-10-01', sku: 'SKU-VND-A001', handlingFee: 500, storeChargePerDay: 50, freeDays: 7 },
+  { id: 'ITM-001', vendorId: 'VND-101', name: 'Matte Lipstick (Red)', category: 'Beauty', price: 12000, cost: 0, quantity: 45, damagedQty: 2, stockInDate: new Date().toISOString().split('T')[0], sku: 'SKU-VND-A001', handlingFee: 500, storeChargePerDay: 50, freeDays: 7 },
   { id: 'ITM-002', vendorId: 'VND-101', name: 'Hydrating Serum 50ml', category: 'Skincare', price: 28000, cost: 0, quantity: 18, damagedQty: 0, stockInDate: '2026-09-15', sku: 'SKU-VND-A002', handlingFee: 500, storeChargePerDay: 50, freeDays: 7 },
-  { id: 'ITM-003', vendorId: 'VND-102', name: 'Oversized Cotton Tee', category: 'Apparel', price: 18000, cost: 0, quantity: 30, damagedQty: 1, stockInDate: '2026-10-10', sku: 'SKU-VND-B001', handlingFee: 600, storeChargePerDay: 60, freeDays: 5 },
+  { id: 'ITM-003', vendorId: 'VND-102', name: 'Oversized Cotton Tee', category: 'Apparel', price: 18000, cost: 0, quantity: 30, damagedQty: 1, stockInDate: new Date().toISOString().split('T')[0], sku: 'SKU-VND-B001', handlingFee: 600, storeChargePerDay: 60, freeDays: 5 },
 ];
 
 const INITIAL_ORDERS = [
@@ -81,7 +81,7 @@ const INITIAL_ORDERS = [
 
 const INITIAL_RETURNS = [
   { id: 'RET-001', orderId: 'TN-ORD-8800', vendorId: 'VND-101', itemName: 'Hydrating Serum', qty: 1, type: 'Delivery Return', reason: 'Customer Refused', status: 'In Warehouse', date: '2026-10-19' },
-  { id: 'RET-002', itemId: 'ITM-001', vendorId: 'VND-101', itemName: 'Matte Lipstick (Red)', qty: 2, type: 'Vendor Return (Damage)', reason: 'Expired packaging', status: 'Returned to Vendor', date: '2026-10-20' }
+  { id: 'RET-002', itemId: 'ITM-001', vendorId: 'VND-101', itemName: 'Matte Lipstick (Red)', qty: 2, type: 'Vendor Return (Damage)', reason: 'Expired packaging', status: 'Returned to Vendor', date: new Date().toLocaleDateString() }
 ];
 
 const INITIAL_LOGS = [
@@ -108,11 +108,11 @@ export default function App() {
   const [showNotificationDropdown, setShowNotificationDropdown] = useState(false);
   const [showSystemMenu, setShowSystemMenu] = useState(false);
 
-  // Search & Filters State
-  const [searchTerm, setSearchTerm] = useState('');
-  const [inventorySearch, setInventorySearch] = useState('');
-  const [returnsSearch, setReturnsSearch] = useState('');
-  const [cashSearch, setCashSearch] = useState('');
+  // Unified Search State ("Search by...")
+  const [searchMode, setSearchMode] = useState('ID'); // 'ID', 'DATE', 'VENDOR', 'DELIVERY'
+  const [searchQueryVal, setSearchQueryVal] = useState('');
+  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+
   const [vendorFilter, setVendorFilter] = useState('ALL');
   const [deliveryFilter, setDeliveryFilter] = useState('ALL');
 
@@ -300,6 +300,34 @@ export default function App() {
     });
   };
 
+  // Helper to get set of voucher IDs that have COD collection recorded in cash ledger (COD_IN)
+  const codCollectedVoucherIds = useMemo(() => {
+    const ids = new Set();
+    cashLedger.filter(c => c.type === 'COD_IN').forEach(c => {
+      if (c.referenceId) {
+        const matches = c.referenceId.match(/TN-ORD-\d+/g);
+        if (matches) {
+          matches.forEach(id => ids.add(id));
+        }
+      }
+    });
+    return ids;
+  }, [cashLedger]);
+
+  // Helper to get set of voucher IDs that have already been paid out to vendors (VENDOR_OUT)
+  const recordedVoucherIds = useMemo(() => {
+    const ids = new Set();
+    cashLedger.filter(c => c.type === 'VENDOR_OUT').forEach(c => {
+      if (c.referenceId) {
+        const matches = c.referenceId.match(/TN-ORD-\d+/g);
+        if (matches) {
+          matches.forEach(id => ids.add(id));
+        }
+      }
+    });
+    return ids;
+  }, [cashLedger]);
+
   const scopedItems = useMemo(() => {
     let res = items;
     if (currentUser && currentUser.role === 'Vendor') {
@@ -307,12 +335,20 @@ export default function App() {
     } else if (vendorFilter !== 'ALL') {
       res = res.filter(i => i.vendorId === vendorFilter);
     }
-    if (inventorySearch.trim()) {
-      const q = inventorySearch.toLowerCase();
-      res = res.filter(i => i.name.toLowerCase().includes(q) || i.sku.toLowerCase().includes(q) || i.category.toLowerCase().includes(q));
+    if (searchQueryVal.trim()) {
+      const q = searchQueryVal.toLowerCase();
+      if (searchMode === 'ID') {
+        res = res.filter(i => i.id.toLowerCase().includes(q) || i.sku.toLowerCase().includes(q));
+      } else if (searchMode === 'DATE') {
+        res = res.filter(i => i.stockInDate.includes(q));
+      } else if (searchMode === 'VENDOR') {
+        res = res.filter(i => i.vendorId === searchQueryVal || (vendors.find(v => v.id === i.vendorId)?.name.toLowerCase().includes(q)));
+      } else if (searchMode === 'DELIVERY') {
+        // Items don't strictly have delivery service, but match if applicable
+      }
     }
     return res;
-  }, [items, currentUser, vendorFilter, inventorySearch]);
+  }, [items, currentUser, vendorFilter, searchMode, searchQueryVal, vendors]);
 
   const scopedOrders = useMemo(() => {
     let res = orders;
@@ -324,14 +360,21 @@ export default function App() {
     if (deliveryFilter !== 'ALL') {
       res = res.filter(o => o.deliveryService === deliveryFilter);
     }
-    if (searchTerm.trim()) {
-      const q = searchTerm.toLowerCase();
-      res = res.filter(o => o.id.toLowerCase().includes(q) || o.customerName.toLowerCase().includes(q) || o.customerPhone.toLowerCase().includes(q) || o.trackingNo.toLowerCase().includes(q));
+    if (searchQueryVal.trim()) {
+      const q = searchQueryVal.toLowerCase();
+      if (searchMode === 'ID') {
+        res = res.filter(o => o.id.toLowerCase().includes(q) || o.customerName.toLowerCase().includes(q) || o.customerPhone.toLowerCase().includes(q) || o.trackingNo.toLowerCase().includes(q));
+      } else if (searchMode === 'DATE') {
+        res = res.filter(o => o.createdAt.toLowerCase().includes(q));
+      } else if (searchMode === 'VENDOR') {
+        res = res.filter(o => o.vendorId === searchQueryVal || (vendors.find(v => v.id === o.vendorId)?.name.toLowerCase().includes(q)));
+      } else if (searchMode === 'DELIVERY') {
+        res = res.filter(o => o.deliveryService.toLowerCase().includes(q));
+      }
     }
     return res;
-  }, [orders, currentUser, vendorFilter, deliveryFilter, searchTerm]);
+  }, [orders, currentUser, vendorFilter, deliveryFilter, searchMode, searchQueryVal, vendors]);
 
-  // Helper for item store charge calculation up to target date (e.g. order date or today)
   function calculateStoreCharge(item, targetDate = new Date()) {
     const vendor = vendors.find(v => v.id === item.vendorId);
     if (!vendor) return 0;
@@ -349,7 +392,6 @@ export default function App() {
     return 0;
   }
 
-  // Helper for calculating store charges for specific ordered items up to the order creation date
   function calculateOrderStoreCharges(order) {
     let totalStore = 0;
     const orderDate = new Date(order.createdAt || Date.now());
@@ -368,20 +410,6 @@ export default function App() {
     });
     return totalStore;
   }
-
-  // Helper to collect all voucher IDs that have already been recorded in cash ledger transactions (Vendor Payout / Closed Cash)
-  const recordedVoucherIds = useMemo(() => {
-    const ids = new Set();
-    cashLedger.forEach(c => {
-      if (c.referenceId) {
-        const matches = c.referenceId.match(/TN-ORD-\d+/g);
-        if (matches) {
-          matches.forEach(id => ids.add(id));
-        }
-      }
-    });
-    return ids;
-  }, [cashLedger]);
 
   const stats = useMemo(() => {
     const totalOrders = scopedOrders.length;
@@ -438,7 +466,7 @@ export default function App() {
     return Math.max(...chartData.map(d => Number(d[chartMetric.startsWith('del') ? 'qty' : chartMetric]) || 0), 1);
   }, [chartData, chartMetric]);
 
-  // Helper for Exporting Client-Facing Vendor Payout Statement Report (.xlsx format)
+  // Export as .xls (Microsoft Excel format compatible)
   const exportVendorStatement = (vendorId) => {
     const vendor = vendors.find(v => v.id === vendorId);
     if (!vendor) return;
@@ -469,15 +497,38 @@ export default function App() {
 
     const headers = Object.keys(reportRows[0]).join("\t");
     const rows = reportRows.map(r => Object.values(r).join("\t")).join("\n");
-    const blob = new Blob([headers + "\n" + rows], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const blob = new Blob([headers + "\n" + rows], { type: 'application/vnd.ms-excel' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `TN_Vendor_Payout_Statement_${vendor.name}_${Date.now()}.xlsx`;
+    link.download = `TN_Vendor_Payout_Statement_${vendor.name}_${Date.now()}.xls`;
     document.body.appendChild(link);
     link.click();
     link.remove();
-    addLog(`Exported official client Vendor Statement report (.xlsx) for ${vendor.name}`);
+    addLog(`Exported official client Vendor Statement report (.xls) for ${vendor.name}`);
+  };
+
+  const exportSelectedToExcel = (type, dataList, selectedIds) => {
+    const targetData = selectedIds.length > 0 
+      ? dataList.filter(item => selectedIds.includes(item.id))
+      : dataList;
+
+    if (targetData.length === 0) {
+      alert('Export ထုတ်ရန် ဒေတာ ရွေးချယ်ထားခြင်း မရှိပါ (သို့) ဒေတာ မရှိပါ။');
+      return;
+    }
+
+    const headers = Object.keys(targetData[0] || {}).join("\t");
+    const rows = targetData.map(row => Object.values(row).map(v => typeof v === 'object' ? JSON.stringify(v) : v).join("\t")).join("\n");
+    const blob = new Blob([headers + "\n" + rows], { type: 'application/vnd.ms-excel' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `TN_Fulfillment_Selected_${type}_${Date.now()}.xls`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    addLog(`Exported selected ${type} data as Excel .xls format`);
   };
 
   const handleExportBackup = () => {
@@ -678,29 +729,6 @@ export default function App() {
     }
   };
 
-  const exportSelectedToExcel = (type, dataList, selectedIds) => {
-    const targetData = selectedIds.length > 0 
-      ? dataList.filter(item => selectedIds.includes(item.id))
-      : dataList;
-
-    if (targetData.length === 0) {
-      alert('Export ထုတ်ရန် ဒေတာ ရွေးချယ်ထားခြင်း မရှိပါ (သို့) ဒေတာ မရှိပါ။');
-      return;
-    }
-
-    const headers = Object.keys(targetData[0] || {}).join("\t");
-    const rows = targetData.map(row => Object.values(row).map(v => typeof v === 'object' ? JSON.stringify(v) : v).join("\t")).join("\n");
-    const blob = new Blob([headers + "\n" + rows], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `TN_Fulfillment_Selected_${type}_${Date.now()}.xlsx`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    addLog(`Exported selected ${type} data as Excel .xlsx format`);
-  };
-
   const handleCreateOrder = async (e) => {
     e.preventDefault();
     if (!newOrder.vendorId || newOrder.items.length === 0) return;
@@ -783,9 +811,9 @@ export default function App() {
   const handleUpdateOrderStatus = async (orderId, newStatus, newTracking) => {
     const targetOrder = orders.find(o => o.id === orderId);
     
-    // Finance Rule Check: If voucher is already settled in cash ledger, prevent changing to Cancelled or editing
-    if (recordedVoucherIds.has(orderId)) {
-      alert('ဤ Voucher သည် Cash Management တွင် ငွေပေးချေပြီးစီးသွားပြီ (Cash Closed) ဖြစ်သဖြင့် အခြေအနေ ပြောင်းလဲ၍မရတော့ပါ။');
+    // Finance Rule Check: If voucher has COD collected (COD_IN recorded), prevent changing status or editing
+    if (codCollectedVoucherIds.has(orderId)) {
+      alert('ဤ Voucher သည် COD Cash အဝင်စာရင်း (COD Flow) ပြီးစီးသွားပြီဖြစ်သဖြင့် Status ပြောင်းလဲ၍မရတော့ပါ။');
       return;
     }
 
@@ -834,7 +862,6 @@ export default function App() {
 
     if (isDeliveryReturn && targetOrder.status !== 'Delivery Return') {
       for (const ordItem of targetOrder.items) {
-        // When returning to warehouse, create a new stock batch with today's date for accurate store charge calculation
         const stockItem = items.find(i => i.id === ordItem.itemId);
         if (stockItem) {
           const todayStr = new Date().toISOString().split('T')[0];
@@ -847,7 +874,7 @@ export default function App() {
             cost: 0,
             quantity: ordItem.qty,
             damagedQty: 0,
-            stockInDate: todayStr, // Stock-in date resets to today for store charge calculation
+            stockInDate: todayStr,
             sku: `${stockItem.sku}-RET`,
             handlingFee: stockItem.handlingFee,
             storeChargePerDay: stockItem.storeChargePerDay,
@@ -1014,8 +1041,8 @@ export default function App() {
   };
 
   const handleDeleteVoucher = async (orderId) => {
-    if (recordedVoucherIds.has(orderId)) {
-      alert('ဤ Voucher သည် Cash Management တွင် ငွေပေးချေပြီးစီးသွားပြီ (Cash Closed) ဖြစ်သဖြင့် ဖျက်၍မရပါ။');
+    if (codCollectedVoucherIds.has(orderId)) {
+      alert('ဤ Voucher သည် COD ငွေအဝင်စာရင်း ပြီးစီးပြီးဖြစ်သဖြင့် ဖျက်၍မရပါ။');
       return;
     }
     if (currentUser?.role !== 'Admin') {
@@ -1115,7 +1142,6 @@ export default function App() {
           </div>
 
           <div className="flex items-center space-x-3">
-            {/* Notification Bell */}
             <div className="relative">
               <button 
                 onClick={() => setShowNotificationDropdown(!showNotificationDropdown)}
@@ -1166,7 +1192,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Lockout / Logout Menu Dropdown */}
             <div className="relative">
               <button 
                 onClick={() => setShowSystemMenu(!showSystemMenu)}
@@ -1313,7 +1338,7 @@ export default function App() {
                   <div>
                     <p className="text-xs font-semibold text-slate-500 uppercase">T&N Revenue (Fees)</p>
                     <p className="text-2xl font-bold text-indigo-600 mt-1">{(stats.totalTnRevenue || 0).toLocaleString()} Ks</p>
-                    <p className="text-xs text-slate-400 mt-1">Handling (Pending onwards) + Store</p>
+                    <p className="text-xs text-slate-400 mt-1">Handling + Store</p>
                   </div>
                   <div className="bg-indigo-50 p-3 rounded-lg text-indigo-600">
                     <Tag className="w-6 h-6" />
@@ -1400,7 +1425,7 @@ export default function App() {
                     className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-1.5 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
                   >
                     <Download className="w-3.5 h-3.5" />
-                    <span>Export All Excel (.xlsx)</span>
+                    <span>Export All Excel (.xls)</span>
                   </button>
                 </div>
 
@@ -1614,18 +1639,78 @@ export default function App() {
         {activeTab === 'orders' && (
           <div className="space-y-4">
             
+            {/* Unified Search By Widget */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
               <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-                <div className="relative w-full sm:w-64">
-                  <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-                  <input 
-                    type="text"
-                    placeholder="Search ID, Phone, Tracking..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-9 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
+                
+                <div className="relative">
+                  <button 
+                    onClick={() => setShowSearchDropdown(!showSearchDropdown)}
+                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs px-3 py-2 rounded-lg border border-slate-300 flex items-center space-x-1"
+                  >
+                    <span>Search by: <strong className="text-indigo-600">{searchMode}</strong></span>
+                    <ChevronRight className="w-3.5 h-3.5 ml-1" />
+                  </button>
+
+                  {showSearchDropdown && (
+                    <div className="absolute left-0 mt-1 w-44 bg-white border border-slate-200 rounded-lg shadow-xl z-20 text-xs py-1">
+                      {['ID', 'DATE', 'VENDOR', 'DELIVERY'].map(mode => (
+                        <button
+                          key={mode}
+                          onClick={() => { setSearchMode(mode); setSearchQueryVal(''); setShowSearchDropdown(false); }}
+                          className={`w-full text-left px-3 py-2 hover:bg-indigo-50 font-medium ${searchMode === mode ? 'text-indigo-600 font-bold bg-indigo-50/50' : 'text-slate-700'}`}
+                        >
+                          {mode === 'ID' ? 'ID / Customer / Phone' : mode === 'DATE' ? 'Date' : mode === 'VENDOR' ? 'Vendor Name' : 'Delivery Service'}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
+
+                {/* Conditional Input based on searchMode */}
+                {searchMode === 'ID' && (
+                  <div className="relative w-full sm:w-64">
+                    <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+                    <input 
+                      type="text"
+                      placeholder="Type ID, Phone, Name..."
+                      value={searchQueryVal}
+                      onChange={(e) => setSearchQueryVal(e.target.value)}
+                      className="w-full pl-9 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                )}
+
+                {searchMode === 'DATE' && (
+                  <input 
+                    type="date"
+                    value={searchQueryVal}
+                    onChange={(e) => setSearchQueryVal(e.target.value)}
+                    className="border border-slate-300 rounded-lg text-xs px-3 py-1.5 bg-white"
+                  />
+                )}
+
+                {searchMode === 'VENDOR' && (
+                  <select 
+                    value={searchQueryVal}
+                    onChange={(e) => setSearchQueryVal(e.target.value)}
+                    className="border border-slate-300 rounded-lg text-xs px-3 py-1.5 bg-white font-medium"
+                  >
+                    <option value="">-- Select Vendor --</option>
+                    {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                  </select>
+                )}
+
+                {searchMode === 'DELIVERY' && (
+                  <select 
+                    value={searchQueryVal}
+                    onChange={(e) => setSearchQueryVal(e.target.value)}
+                    className="border border-slate-300 rounded-lg text-xs px-3 py-1.5 bg-white font-medium"
+                  >
+                    <option value="">-- Select Delivery --</option>
+                    {deliveries.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+                  </select>
+                )}
 
                 {currentUser.role !== 'Vendor' && (
                   <select 
@@ -1633,19 +1718,10 @@ export default function App() {
                     onChange={(e) => setVendorFilter(e.target.value)}
                     className="border border-slate-300 rounded-lg text-xs px-3 py-1.5 bg-white font-medium"
                   >
-                    <option value="ALL">All Vendors</option>
+                    <option value="ALL">All Vendors Filter</option>
                     {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
                   </select>
                 )}
-
-                <select 
-                  value={deliveryFilter} 
-                  onChange={(e) => setDeliveryFilter(e.target.value)}
-                  className="border border-slate-300 rounded-lg text-xs px-3 py-1.5 bg-white font-medium"
-                >
-                  <option value="ALL">All Delivery Services</option>
-                  {deliveries.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
-                </select>
               </div>
 
               <div className="flex items-center space-x-2">
@@ -1654,7 +1730,7 @@ export default function App() {
                   className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>Export Excel (.xlsx) {selectedOrderIds.length > 0 ? `(${selectedOrderIds.length})` : ''}</span>
+                  <span>Export Excel (.xls) {selectedOrderIds.length > 0 ? `(${selectedOrderIds.length})` : ''}</span>
                 </button>
 
                 {currentUser.role !== 'Vendor' && (
@@ -1699,8 +1775,8 @@ export default function App() {
                   <tbody className="divide-y divide-slate-100">
                     {scopedOrders.map(order => {
                       const vendor = vendors.find(v => v.id === order.vendorId);
-                      const isCashClosed = recordedVoucherIds.has(order.id);
-                      const isLocked = currentUser.role === 'Vendor' || isCashClosed || (currentUser.role !== 'Admin' && (order.status === 'Delivered' || order.status === 'Cancelled'));
+                      const isCodDone = codCollectedVoucherIds.has(order.id);
+                      const isLocked = currentUser.role === 'Vendor' || isCodDone || (currentUser.role !== 'Admin' && (order.status === 'Delivered' || order.status === 'Cancelled'));
                       const isSelected = selectedOrderIds.includes(order.id);
 
                       return (
@@ -1720,7 +1796,7 @@ export default function App() {
                           </td>
                           <td className="p-3 font-bold text-indigo-600">
                             {order.id}
-                            {isCashClosed && <span className="ml-1 text-[9px] bg-emerald-100 text-emerald-700 px-1 rounded font-semibold">Cash Closed</span>}
+                            {isCodDone && <span className="ml-1 text-[9px] bg-emerald-100 text-emerald-700 px-1 rounded font-semibold">COD Flow Done</span>}
                             <div className="text-[10px] text-slate-400 font-normal">{order.createdAt}</div>
                           </td>
                           <td className="p-3 font-medium text-slate-700">{vendor ? vendor.name : order.vendorId}</td>
@@ -1765,7 +1841,7 @@ export default function App() {
                               <span>Voucher</span>
                             </button>
 
-                            {currentUser.role === 'Admin' && order.cancelled && !isCashClosed && (
+                            {currentUser.role === 'Admin' && order.cancelled && !isCodDone && (
                               <button 
                                 onClick={() => handleDeleteVoucher(order.id)}
                                 className="bg-rose-50 hover:bg-rose-100 text-rose-700 p-1.5 rounded text-[11px] font-semibold inline-flex items-center space-x-1"
@@ -1796,8 +1872,8 @@ export default function App() {
                   <input 
                     type="text"
                     placeholder="Search SKU, Item name, Category..."
-                    value={inventorySearch}
-                    onChange={(e) => setInventorySearch(e.target.value)}
+                    value={searchQueryVal}
+                    onChange={(e) => setSearchQueryVal(e.target.value)}
                     className="w-full pl-9 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
@@ -1820,7 +1896,7 @@ export default function App() {
                   className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>Export Excel (.xlsx) {selectedItemIds.length > 0 ? `(${selectedItemIds.length})` : ''}</span>
+                  <span>Export Excel (.xls) {selectedItemIds.length > 0 ? `(${selectedItemIds.length})` : ''}</span>
                 </button>
 
                 {currentUser.role !== 'Vendor' && (
@@ -1863,7 +1939,7 @@ export default function App() {
                       <th className="p-3">In-Stock Qty</th>
                       <th className="p-3">Stock-In Date</th>
                       <th className="p-3">Store Charges (Est.)</th>
-                      <th className="p-3 text-right">Actions</th>
+                      <th className="p-3 text-right">Actions (Today Only)</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -1872,7 +1948,7 @@ export default function App() {
                       const storeCharge = calculateStoreCharge(item);
                       const isSelected = selectedItemIds.includes(item.id);
                       const todayDateStr = new Date().toISOString().split('T')[0];
-                      const isEditableToday = item.stockInDate === todayDateStr || currentUser.role === 'Admin';
+                      const isTodayBatch = item.stockInDate === todayDateStr;
 
                       return (
                         <tr key={item.id} className="hover:bg-slate-50">
@@ -1916,40 +1992,38 @@ export default function App() {
                             )}
                           </td>
                           <td className="p-3 text-right space-x-2">
-                            {currentUser.role !== 'Vendor' && (
+                            {currentUser.role !== 'Vendor' && isTodayBatch ? (
                               <>
-                                {isEditableToday ? (
-                                  <button 
-                                    onClick={() => {
-                                      const newQtyStr = prompt(`Edit Qty for ${item.name}:`, item.quantity);
-                                      if (newQtyStr !== null) {
-                                        const nQ = Number(newQtyStr);
-                                        if (!isNaN(nQ)) {
-                                          setItems(items.map(i => i.id === item.id ? { ...i, quantity: nQ } : i));
-                                          addLog(`Edited stock quantity for ${item.name} to ${nQ}`);
-                                        }
-                                      }
-                                    }}
-                                    className="text-xs text-indigo-600 hover:underline font-semibold"
-                                  >
-                                    Edit
-                                  </button>
-                                ) : (
-                                  <span className="text-[10px] text-slate-400 cursor-not-allowed" title="Past date batch cannot be edited to protect calculations">Locked</span>
-                                )}
-
                                 <button 
                                   onClick={() => {
-                                    setTargetReturnItem(item);
-                                    setReturnForm({ qty: 1, reason: 'Overstock / Damaged Return' });
-                                    setShowReturnModal(true);
+                                    const newQtyStr = prompt(`Edit Qty for ${item.name}:`, item.quantity);
+                                    if (newQtyStr !== null) {
+                                      const nQ = Number(newQtyStr);
+                                      if (!isNaN(nQ)) {
+                                        setItems(items.map(i => i.id === item.id ? { ...i, quantity: nQ } : i));
+                                        addLog(`Edited stock quantity for ${item.name} to ${nQ}`);
+                                      }
+                                    }
+                                  }}
+                                  className="text-xs text-indigo-600 hover:underline font-semibold"
+                                >
+                                  Edit
+                                </button>
+                                <button 
+                                  onClick={() => {
+                                    if (confirm(`သတိပေးချက်: Stock item "${item.name}" ကို Cancel လုပ်၍ ဖျက်ပစ်ရန် သေချာပါသလား?`)) {
+                                      setItems(items.filter(i => i.id !== item.id));
+                                      addLog(`Cancelled and removed stock item ${item.name}`);
+                                    }
                                   }}
                                   className="text-xs text-rose-600 hover:underline font-semibold"
                                 >
-                                  Return Stock
+                                  Cancel
                                 </button>
                               </>
-                            )}
+                            ) : currentUser.role !== 'Vendor' ? (
+                              <span className="text-[10px] text-slate-400">Locked (Past Date)</span>
+                            ) : null}
                           </td>
                         </tr>
                       );
@@ -1970,8 +2044,8 @@ export default function App() {
                   <input 
                     type="text"
                     placeholder="Search ID, Item, Reason..."
-                    value={returnsSearch}
-                    onChange={(e) => setReturnsSearch(e.target.value)}
+                    value={searchQueryVal}
+                    onChange={(e) => setSearchQueryVal(e.target.value)}
                     className="w-full pl-9 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
@@ -1982,7 +2056,7 @@ export default function App() {
                 className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>Export Excel (.xlsx) {selectedReturnIds.length > 0 ? `(${selectedReturnIds.length})` : ''}</span>
+                <span>Export Excel (.xls) {selectedReturnIds.length > 0 ? `(${selectedReturnIds.length})` : ''}</span>
               </button>
             </div>
 
@@ -2010,15 +2084,19 @@ export default function App() {
                     <th className="p-3">Reason</th>
                     <th className="p-3">Status</th>
                     <th className="p-3">Date</th>
+                    <th className="p-3 text-right">Actions (Today Only)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {returns
                     .filter(ret => (currentUser.role !== 'Vendor' || ret.vendorId === currentUser.vendorId) && 
-                      (!returnsSearch.trim() || ret.id.toLowerCase().includes(returnsSearch.toLowerCase()) || ret.itemName.toLowerCase().includes(returnsSearch.toLowerCase()) || ret.reason.toLowerCase().includes(returnsSearch.toLowerCase()))
+                      (!searchQueryVal.trim() || ret.id.toLowerCase().includes(searchQueryVal.toLowerCase()) || ret.itemName.toLowerCase().includes(searchQueryVal.toLowerCase()) || ret.reason.toLowerCase().includes(searchQueryVal.toLowerCase()))
                     )
                     .map(ret => {
                       const isSelected = selectedReturnIds.includes(ret.id);
+                      const todayDateStr = new Date().toLocaleDateString();
+                      const isTodayReturn = ret.date === todayDateStr;
+
                       return (
                         <tr key={ret.id} className="hover:bg-slate-50">
                           <td className="p-3 text-center">
@@ -2047,6 +2125,37 @@ export default function App() {
                           <td className="p-3 text-slate-500">{ret.reason}</td>
                           <td className="p-3 font-medium text-slate-700">{ret.status}</td>
                           <td className="p-3 text-slate-400 font-mono text-[11px]">{ret.date}</td>
+                          <td className="p-3 text-right space-x-2">
+                            {isTodayReturn ? (
+                              <>
+                                <button 
+                                  onClick={() => {
+                                    const newReason = prompt(`Edit Return Reason for ${ret.id}:`, ret.reason);
+                                    if (newReason !== null) {
+                                      setReturns(returns.map(r => r.id === ret.id ? { ...r, reason: newReason } : r));
+                                      addLog(`Edited return record ${ret.id}`);
+                                    }
+                                  }}
+                                  className="text-xs text-indigo-600 hover:underline font-semibold"
+                                >
+                                  Edit
+                                </button>
+                                <button 
+                                  onClick={() => {
+                                    if (confirm(`Return record ${ret.id} ကို Cancel လုပ်၍ ဖျက်ပစ်ရန် သေချာပါသလား?`)) {
+                                      setReturns(returns.filter(r => r.id !== ret.id));
+                                      addLog(`Cancelled return record ${ret.id}`);
+                                    }
+                                  }}
+                                  className="text-xs text-rose-600 hover:underline font-semibold"
+                                >
+                                  Cancel
+                                </button>
+                              </>
+                            ) : (
+                              <span className="text-[10px] text-slate-400">Locked (Past Date)</span>
+                            )}
+                          </td>
                         </tr>
                       );
                   })}
@@ -2063,7 +2172,7 @@ export default function App() {
               <div>
                 <h3 className="font-bold text-slate-800 text-sm">Vendors Management & Client Payout Reports</h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Manage vendors, bank accounts, net payable calculations, and official client payout statements (.xlsx).
+                  Manage vendors, bank accounts, net payable calculations, and official client payout statements (.xls).
                 </p>
               </div>
 
@@ -2154,16 +2263,16 @@ export default function App() {
                         className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold py-2 rounded-lg transition-colors flex items-center justify-center space-x-1 shadow-sm"
                       >
                         <Download className="w-3.5 h-3.5" />
-                        <span>Client Payout Report (.xlsx)</span>
+                        <span>Client Payout Report (.xls)</span>
                       </button>
                       
                       <button 
                         onClick={() => {
                           exportSelectedToExcel(`settlement_${vendor.id}`, vendorDeliveredOrders, vendorDeliveredOrders.map(o => o.id));
-                          addLog(`Exported full settlement statement (.xlsx) for Vendor ${vendor.name}`);
+                          addLog(`Exported full settlement statement (.xls) for Vendor ${vendor.name}`);
                         }}
                         className="bg-slate-900 hover:bg-slate-800 text-white text-xs px-3 py-2 rounded-lg transition-colors flex items-center justify-center"
-                        title="Full Order Details Excel (.xlsx)"
+                        title="Full Order Details Excel (.xls)"
                       >
                         <FileSpreadsheet className="w-3.5 h-3.5" />
                       </button>
@@ -2257,12 +2366,12 @@ export default function App() {
                     <button 
                       onClick={() => {
                         exportSelectedToExcel(`delivery_${del.id}`, delOrders, delOrders.map(o => o.id));
-                        addLog(`Exported delivery report (.xlsx) for ${del.name}`);
+                        addLog(`Exported delivery report (.xls) for ${del.name}`);
                       }}
                       className="w-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold py-2 rounded-lg transition-colors flex items-center justify-center space-x-1"
                     >
                       <Download className="w-3.5 h-3.5" />
-                      <span>Export Delivery Report (.xlsx)</span>
+                      <span>Export Delivery Report (.xls)</span>
                     </button>
                   </div>
                 );
@@ -2281,8 +2390,8 @@ export default function App() {
                   <input 
                     type="text"
                     placeholder="Search ID, Ref No, Description..."
-                    value={cashSearch}
-                    onChange={(e) => setCashSearch(e.target.value)}
+                    value={searchQueryVal}
+                    onChange={(e) => setSearchQueryVal(e.target.value)}
                     className="w-full pl-9 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
@@ -2294,7 +2403,7 @@ export default function App() {
                   className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>Export Excel (.xlsx)</span>
+                  <span>Export Excel (.xls)</span>
                 </button>
                 <button 
                   onClick={() => {
@@ -2363,7 +2472,7 @@ export default function App() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {cashLedger
-                    .filter(c => !cashSearch.trim() || c.id.toLowerCase().includes(cashSearch.toLowerCase()) || (c.referenceId && c.referenceId.toLowerCase().includes(cashSearch.toLowerCase())) || (c.description && c.description.toLowerCase().includes(cashSearch.toLowerCase())))
+                    .filter(c => !searchQueryVal.trim() || c.id.toLowerCase().includes(searchQueryVal.toLowerCase()) || (c.referenceId && c.referenceId.toLowerCase().includes(searchQueryVal.toLowerCase())) || (c.description && c.description.toLowerCase().includes(searchQueryVal.toLowerCase())))
                     .map(c => {
                       const isSelected = selectedCashIds.includes(c.id);
                       return (
@@ -2497,7 +2606,7 @@ export default function App() {
                 className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>Export Logs (.xlsx)</span>
+                <span>Export Logs (.xls)</span>
               </button>
             </div>
 
@@ -2534,12 +2643,12 @@ export default function App() {
 
       </main>
 
-      {/* Advanced Cash Transaction Modal with Mandatory Transaction No */}
+      {/* Advanced Cash Transaction Modal (COD Flow first, then Vendor Payout) */}
       {showCashModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b pb-3">
-              <h3 className="font-bold text-slate-800 text-base">Add Cash Transaction (Voucher Flow & Transfer Ref)</h3>
+              <h3 className="font-bold text-slate-800 text-base">Add Cash Transaction (COD Flow & Payout Logic)</h3>
               <button onClick={() => setShowCashModal(false)} className="text-slate-400 hover:text-slate-600 text-lg">✕</button>
             </div>
 
@@ -2555,8 +2664,8 @@ export default function App() {
                   }}
                   className="w-full border border-slate-300 rounded-lg p-2 bg-white"
                 >
-                  <option value="COD_IN">COD Flow (Delivery Collection)</option>
-                  <option value="VENDOR_OUT">Vendor Payout Flow (Settlement with fees deducted)</option>
+                  <option value="COD_IN">1. COD Flow (Delivery Collection - COD In)</option>
+                  <option value="VENDOR_OUT">2. Vendor Payout Flow (Must have COD Collected first)</option>
                 </select>
               </div>
 
@@ -2592,10 +2701,14 @@ export default function App() {
                 </div>
               )}
 
-              {/* Voucher Selection Table (Filtered to exclude already recorded vouchers) */}
+              {/* Voucher Selection Table with strict COD flow enforcement */}
               {selectedPartnerId && (
                 <div className="space-y-2">
-                  <label className="block font-semibold text-slate-700">Select Outstanding Vouchers (Already recorded vouchers are filtered out):</label>
+                  <label className="block font-semibold text-slate-700">
+                    {cashFlowType === 'COD_IN' 
+                      ? 'Select Delivered Vouchers to collect COD:' 
+                      : 'Select Vouchers that have already completed COD Collection (COD_IN done):'}
+                  </label>
                   <div className="border rounded-lg max-h-56 overflow-y-auto">
                     <table className="w-full text-left text-xs">
                       <thead className="bg-slate-100 text-slate-600 sticky top-0">
@@ -2615,7 +2728,7 @@ export default function App() {
                       <tbody className="divide-y">
                         {cashFlowType === 'COD_IN' ? (
                           orders
-                            .filter(o => o.deliveryService === selectedPartnerId && (o.status === 'Delivered' || o.status === 'Partial Return') && !o.cancelled && !recordedVoucherIds.has(o.id))
+                            .filter(o => o.deliveryService === selectedPartnerId && (o.status === 'Delivered' || o.status === 'Partial Return') && !o.cancelled && !codCollectedVoucherIds.has(o.id))
                             .map(ord => {
                               const isChecked = selectedVoucherIds.includes(ord.id);
                               return (
@@ -2643,7 +2756,7 @@ export default function App() {
                             })
                         ) : (
                           orders
-                            .filter(o => o.vendorId === selectedPartnerId && (o.status === 'Delivered' || o.status === 'Partial Return') && !o.cancelled && !recordedVoucherIds.has(o.id))
+                            .filter(o => o.vendorId === selectedPartnerId && (o.status === 'Delivered' || o.status === 'Partial Return') && !o.cancelled && codCollectedVoucherIds.has(o.id) && !recordedVoucherIds.has(o.id))
                             .map(ord => {
                               const isChecked = selectedVoucherIds.includes(ord.id);
                               const cod = Number(ord.totalCod) || 0;
@@ -2680,8 +2793,8 @@ export default function App() {
                       </tbody>
                     </table>
                   </div>
-                  {orders.filter(o => (cashFlowType === 'COD_IN' ? o.deliveryService === selectedPartnerId : o.vendorId === selectedPartnerId) && (o.status === 'Delivered' || o.status === 'Partial Return') && !o.cancelled && !recordedVoucherIds.has(o.id)).length === 0 && (
-                    <p className="text-slate-400 text-center py-2">စာရင်းသွင်းရန် ကျန်ရှိသော Voucher မရှိတော့ပါ။ (အားလုံး စာရင်းသွင်းပြီးပါပြီ)</p>
+                  {cashFlowType === 'VENDOR_OUT' && (
+                    <p className="text-[11px] text-amber-600 font-medium">⚠️ Note: Vendor Payout (Vendor Out) လုပ်နိုင်ရန် Delivery ဆီမှ COD အဝင်စာရင်း (COD_IN) အရင်ဆုံး လုပ်ဆောင်ထားပြီးဖြစ်ရပါမည်။</p>
                   )}
                 </div>
               )}
@@ -2692,7 +2805,7 @@ export default function App() {
                   type="text" required
                   value={cashTransactionNo}
                   onChange={(e) => setCashTransactionNo(e.target.value)}
-                  placeholder="e.g. KPay-TXN-99882233 or Bank Ref No."
+                  placeholder="e.g. KPay-TXN-99882233 or Ref No."
                   className="w-full border border-slate-300 rounded-lg p-2 font-mono"
                 />
               </div>
@@ -3082,7 +3195,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Add Stock Item Modal (Creates new batch with today's stockInDate for accurate store charges) */}
+      {/* Add Stock Item Modal */}
       {showItemModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
@@ -3120,7 +3233,6 @@ export default function App() {
                 }
                 const addQty = Number(newItem.quantity) || 0;
                 
-                // Create a new batch row for restock so store charges calculate accurately from today onwards
                 const newBatchItem = {
                   id: `ITM-${Date.now().toString().slice(-4)}-${Math.floor(Math.random()*100)}`,
                   vendorId: targetExisting.vendorId,
