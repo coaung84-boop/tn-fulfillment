@@ -2218,7 +2218,264 @@ export default function App() {
 
       {/* Modals omitted for brevity, but matching App.tsx */}
       {/* ... */}
+{/* 1. ORDER MODAL */}
+      {showOrderModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl border border-slate-200">
+            <h3 className="font-bold text-slate-800 text-lg border-b pb-2">Create New Order Voucher</h3>
+            <form onSubmit={handleCreateOrder} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Select Vendor</label>
+                <select 
+                  required
+                  value={newOrder.vendorId}
+                  onChange={(e) => {
+                    const vId = e.target.value;
+                    setNewOrder({ ...newOrder, vendorId: vId, items: [{ itemId: '', qty: 1, discount: 0 }] });
+                  }}
+                  className="w-full px-3 py-2 border rounded-lg"
+                >
+                  <option value="">-- Choose Vendor --</option>
+                  {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                </select>
+              </div>
 
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Customer Name</label>
+                  <input type="text" required placeholder="Name" value={newOrder.customerName} onChange={e => setNewOrder({...newOrder, customerName: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Customer Phone</label>
+                  <input type="text" required placeholder="Phone" value={newOrder.customerPhone} onChange={e => handleCustomerPhoneChange(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Delivery Address</label>
+                <textarea rows="2" required placeholder="Address" value={newOrder.deliveryAddress} onChange={e => setNewOrder({...newOrder, deliveryAddress: e.target.value})} className="w-full px-3 py-2 border rounded-lg"></textarea>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Delivery Service</label>
+                  <select value={newOrder.deliveryService} onChange={e => setNewOrder({...newOrder, deliveryService: e.target.value})} className="w-full px-3 py-2 border rounded-lg">
+                    {deliveries.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Delivery Fee (Ks)</label>
+                  <input type="number" value={newOrder.deliveryFee} onChange={e => setNewOrder({...newOrder, deliveryFee: Number(e.target.value)})} className="w-full px-3 py-2 border rounded-lg" />
+                </div>
+              </div>
+
+              <div className="border-t pt-2">
+                <label className="block font-semibold text-slate-700 mb-1">Select Item from Vendor Stock</label>
+                {newOrder.items.map((it, idx) => {
+                  const availableStockItems = items.filter(i => i.vendorId === newOrder.vendorId && Number(i.quantity) > 0);
+                  return (
+                    <div key={idx} className="flex gap-2 items-center mb-2">
+                      <select 
+                        required
+                        value={it.itemId}
+                        onChange={e => {
+                          const id = e.target.value;
+                          const updated = [...newOrder.items];
+                          updated[idx].itemId = id;
+                          setNewOrder({...newOrder, items: updated});
+                        }}
+                        className="flex-1 px-3 py-2 border rounded-lg"
+                      >
+                        <option value="">-- Choose Stock Item --</option>
+                        {availableStockItems.map(st => <option key={st.id} value={st.id}>{st.name} (In stock: {st.quantity})</option>)}
+                      </select>
+                      <input 
+                        type="number" min="1" placeholder="Qty" value={it.qty}
+                        onChange={e => {
+                          const q = Number(e.target.value);
+                          const updated = [...newOrder.items];
+                          updated[idx].qty = q;
+                          setNewOrder({...newOrder, items: updated});
+                        }}
+                        className="w-20 px-3 py-2 border rounded-lg"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-3 border-t">
+                <button type="button" onClick={() => setShowOrderModal(false)} className="px-4 py-2 bg-slate-100 rounded-lg text-slate-600 font-semibold">Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-semibold">Save Order</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 2. INVENTORY ITEM MODAL */}
+      {showItemModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200">
+            <h3 className="font-bold text-slate-800 text-lg border-b pb-2">Add New Item Stock</h3>
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              if (!newItem.vendorId || !newItem.name || !newItem.price) return;
+              const todayStr = new Date().toISOString().split('T')[0];
+              const itemObj = {
+                id: `ITM-${Date.now().toString().slice(-4)}`,
+                vendorId: newItem.vendorId,
+                name: newItem.name,
+                category: newItem.category,
+                price: Number(newItem.price) || 0,
+                cost: 0,
+                quantity: Number(newItem.quantity) || 1,
+                damagedQty: 0,
+                stockInDate: todayStr,
+                sku: `SKU-${Math.floor(1000 + Math.random() * 9000)}`,
+                handlingFee: Number(newItem.handlingFee) || 500,
+                storeChargePerDay: Number(newItem.storeChargePerDay) || 30,
+                freeDays: Number(newItem.freeDays) || 7
+              };
+              setItems([itemObj, ...items]);
+              addLog(`Added new inventory item ${itemObj.name} for vendor ${newItem.vendorId}`);
+              setShowItemModal(false);
+            }} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Select Vendor</label>
+                <select required value={newItem.vendorId} onChange={e => setNewItem({...newItem, vendorId: e.target.value})} className="w-full px-3 py-2 border rounded-lg">
+                  <option value="">-- Choose Vendor --</option>
+                  {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Item Name</label>
+                <input type="text" required placeholder="Item name" value={newItem.name} onChange={e => setNewItem({...newItem, name: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Selling Price (Ks)</label>
+                  <input type="number" required placeholder="Price" value={newItem.price} onChange={e => setNewItem({...newItem, price: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Quantity (Units)</label>
+                  <input type="number" required placeholder="Qty" value={newItem.quantity} onChange={e => setNewItem({...newItem, quantity: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
+                </div>
+              </div>
+              <div className="flex justify-end space-x-2 pt-3 border-t">
+                <button type="button" onClick={() => setShowItemModal(false)} className="px-4 py-2 bg-slate-100 rounded-lg text-slate-600 font-semibold">Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-semibold">Save Item</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 3. VENDOR MODAL */}
+      {showVendorModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200">
+            <h3 className="font-bold text-slate-800 text-lg border-b pb-2">{editingVendor ? 'Edit Vendor' : 'Register New Vendor'}</h3>
+            <form onSubmit={handleSaveVendor} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Vendor Name</label>
+                <input type="text" required placeholder="Name" value={newVendor.name} onChange={e => setNewVendor({...newVendor, name: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Phone Number</label>
+                <input type="text" required placeholder="Phone" value={newVendor.phone} onChange={e => setNewVendor({...newVendor, phone: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Address</label>
+                <input type="text" placeholder="Address" value={newVendor.address} onChange={e => setNewVendor({...newVendor, address: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Bank Account / KBZPay</label>
+                <input type="text" placeholder="Bank details" value={newVendor.bankAccount} onChange={e => setNewVendor({...newVendor, bankAccount: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
+              </div>
+              <div className="flex justify-end space-x-2 pt-3 border-t">
+                <button type="button" onClick={() => setShowVendorModal(false)} className="px-4 py-2 bg-slate-100 rounded-lg text-slate-600 font-semibold">Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-semibold">Save Vendor</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 4. DELIVERY SERVICE MODAL */}
+      {showDeliveryModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200">
+            <h3 className="font-bold text-slate-800 text-lg border-b pb-2">{editingDelivery ? 'Edit Delivery Service' : 'Register New Delivery Service'}</h3>
+            <form onSubmit={handleSaveDelivery} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Service Name</label>
+                <input type="text" required placeholder="Delivery name" value={newDelivery.name} onChange={e => setNewDelivery({...newDelivery, name: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Phone</label>
+                <input type="text" required placeholder="Phone" value={newDelivery.phone} onChange={e => setNewDelivery({...newDelivery, phone: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Hub Address</label>
+                <input type="text" placeholder="Address" value={newDelivery.address} onChange={e => setNewDelivery({...newDelivery, address: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Bank / KBZPay Info</label>
+                <input type="text" placeholder="Bank info" value={newDelivery.bankAccount} onChange={e => setNewDelivery({...newDelivery, bankAccount: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
+              </div>
+              <div className="flex justify-end space-x-2 pt-3 border-t">
+                <button type="button" onClick={() => setShowDeliveryModal(false)} className="px-4 py-2 bg-slate-100 rounded-lg text-slate-600 font-semibold">Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-semibold">Save Delivery</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 5. USER MODAL */}
+      {showUserModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200">
+            <h3 className="font-bold text-slate-800 text-lg border-b pb-2">{editingUser ? 'Edit User' : 'Create New User'}</h3>
+            <form onSubmit={handleSaveUser} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Username</label>
+                <input type="text" required placeholder="Username" value={newUser.username} onChange={e => setNewUser({...newUser, username: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Password</label>
+                <input type="password" placeholder="Password (leave blank to keep)" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Display Name</label>
+                <input type="text" placeholder="Full name" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
+              </div>
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Role</label>
+                <select value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})} className="w-full px-3 py-2 border rounded-lg">
+                  <option value="Staff">Staff</option>
+                  <option value="Admin">Admin</option>
+                  <option value="Vendor">Vendor</option>
+                </select>
+              </div>
+              {newUser.role === 'Vendor' && (
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Assign Vendor</label>
+                  <select value={newUser.vendorId} onChange={e => setNewUser({...newUser, vendorId: e.target.value})} className="w-full px-3 py-2 border rounded-lg">
+                    <option value="">-- Select Vendor --</option>
+                    {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                  </select>
+                </div>
+              )}
+              <div className="flex justify-end space-x-2 pt-3 border-t">
+                <button type="button" onClick={() => setShowUserModal(false)} className="px-4 py-2 bg-slate-100 rounded-lg text-slate-600 font-semibold">Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-semibold">Save User</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
       <footer className="bg-white border-t border-slate-200 py-3 text-center text-xs text-slate-500 mt-auto">
         T&N Fulfillment System • Supported by T&N
       </footer>
