@@ -5,7 +5,7 @@ import {
   CheckCircle, Clock, AlertTriangle, Eye, Printer, Download, Upload,
   ArrowUpRight, ArrowDownRight, RefreshCw, Lock, UserCheck, Key,
   BarChart2, Filter, ChevronRight, LogOut, FileSpreadsheet, Tag, TrendingUp,
-  PieChart, Table, ArrowUpDown, UserPlus, CheckSquare, Square, Bell, HardDrive, Shield, CreditCard
+  PieChart, Table, ArrowUpDown, UserPlus, CheckSquare, Square, Bell, HardDrive, Shield, CreditCard, Menu
 } from 'lucide-react';
 
 const API_BASE_URL = 'https://tn-backend-j1vg.onrender.com';
@@ -106,9 +106,15 @@ export default function App() {
   const [cashLedger, setCashLedger] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [showNotificationDropdown, setShowNotificationDropdown] = useState(false);
+  const [showSystemMenu, setShowSystemMenu] = useState(false);
 
+  // Search & Filters State
   const [searchTerm, setSearchTerm] = useState('');
+  const [inventorySearch, setInventorySearch] = useState('');
+  const [returnsSearch, setReturnsSearch] = useState('');
+  const [cashSearch, setCashSearch] = useState('');
   const [vendorFilter, setVendorFilter] = useState('ALL');
+  const [deliveryFilter, setDeliveryFilter] = useState('ALL');
 
   const [selectedOrderIds, setSelectedOrderIds] = useState([]);
   const [selectedItemIds, setSelectedItemIds] = useState([]);
@@ -134,6 +140,7 @@ export default function App() {
   const [cashFlowType, setCashFlowType] = useState('COD_IN'); // 'COD_IN' or 'VENDOR_OUT'
   const [selectedPartnerId, setSelectedPartnerId] = useState('');
   const [selectedVoucherIds, setSelectedVoucherIds] = useState([]);
+  const [cashTransactionNo, setCashTransactionNo] = useState('');
   const [cashDescription, setCashDescription] = useState('');
 
   // Partial Return Modal State
@@ -294,24 +301,35 @@ export default function App() {
   };
 
   const scopedItems = useMemo(() => {
+    let res = items;
     if (currentUser && currentUser.role === 'Vendor') {
-      return items.filter(i => i.vendorId === currentUser.vendorId);
+      res = res.filter(i => i.vendorId === currentUser.vendorId);
+    } else if (vendorFilter !== 'ALL') {
+      res = res.filter(i => i.vendorId === vendorFilter);
     }
-    if (vendorFilter !== 'ALL') {
-      return items.filter(i => i.vendorId === vendorFilter);
+    if (inventorySearch.trim()) {
+      const q = inventorySearch.toLowerCase();
+      res = res.filter(i => i.name.toLowerCase().includes(q) || i.sku.toLowerCase().includes(q) || i.category.toLowerCase().includes(q));
     }
-    return items;
-  }, [items, currentUser, vendorFilter]);
+    return res;
+  }, [items, currentUser, vendorFilter, inventorySearch]);
 
   const scopedOrders = useMemo(() => {
+    let res = orders;
     if (currentUser && currentUser.role === 'Vendor') {
-      return orders.filter(o => o.vendorId === currentUser.vendorId);
+      res = res.filter(o => o.vendorId === currentUser.vendorId);
+    } else if (vendorFilter !== 'ALL') {
+      res = res.filter(o => o.vendorId === vendorFilter);
     }
-    if (vendorFilter !== 'ALL') {
-      return orders.filter(o => o.vendorId === vendorFilter);
+    if (deliveryFilter !== 'ALL') {
+      res = res.filter(o => o.deliveryService === deliveryFilter);
     }
-    return orders;
-  }, [orders, currentUser, vendorFilter]);
+    if (searchTerm.trim()) {
+      const q = searchTerm.toLowerCase();
+      res = res.filter(o => o.id.toLowerCase().includes(q) || o.customerName.toLowerCase().includes(q) || o.customerPhone.toLowerCase().includes(q) || o.trackingNo.toLowerCase().includes(q));
+    }
+    return res;
+  }, [orders, currentUser, vendorFilter, deliveryFilter, searchTerm]);
 
   // Helper for item store charge calculation up to target date (e.g. order date or today)
   function calculateStoreCharge(item, targetDate = new Date()) {
@@ -351,7 +369,7 @@ export default function App() {
     return totalStore;
   }
 
-  // Helper to collect all voucher IDs that have already been recorded in cash ledger transactions
+  // Helper to collect all voucher IDs that have already been recorded in cash ledger transactions (Vendor Payout / Closed Cash)
   const recordedVoucherIds = useMemo(() => {
     const ids = new Set();
     cashLedger.forEach(c => {
@@ -420,7 +438,7 @@ export default function App() {
     return Math.max(...chartData.map(d => Number(d[chartMetric.startsWith('del') ? 'qty' : chartMetric]) || 0), 1);
   }, [chartData, chartMetric]);
 
-  // Helper for Exporting Client-Facing Vendor Payout Statement Report with full details (COD, Handling Fee, Store Charges, Net Payable per voucher)
+  // Helper for Exporting Client-Facing Vendor Payout Statement Report (.xlsx format)
   const exportVendorStatement = (vendorId) => {
     const vendor = vendors.find(v => v.id === vendorId);
     if (!vendor) return;
@@ -451,15 +469,15 @@ export default function App() {
 
     const headers = Object.keys(reportRows[0]).join("\t");
     const rows = reportRows.map(r => Object.values(r).join("\t")).join("\n");
-    const blob = new Blob([headers + "\n" + rows], { type: 'application/vnd.ms-excel' });
+    const blob = new Blob([headers + "\n" + rows], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `TN_Vendor_Payout_Statement_${vendor.name}_${Date.now()}.xls`;
+    link.download = `TN_Vendor_Payout_Statement_${vendor.name}_${Date.now()}.xlsx`;
     document.body.appendChild(link);
     link.click();
     link.remove();
-    addLog(`Exported official client Vendor Statement report for ${vendor.name}`);
+    addLog(`Exported official client Vendor Statement report (.xlsx) for ${vendor.name}`);
   };
 
   const handleExportBackup = () => {
@@ -672,15 +690,15 @@ export default function App() {
 
     const headers = Object.keys(targetData[0] || {}).join("\t");
     const rows = targetData.map(row => Object.values(row).map(v => typeof v === 'object' ? JSON.stringify(v) : v).join("\t")).join("\n");
-    const blob = new Blob([headers + "\n" + rows], { type: 'application/vnd.ms-excel' });
+    const blob = new Blob([headers + "\n" + rows], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `TN_Fulfillment_Selected_${type}_${Date.now()}.xls`;
+    link.download = `TN_Fulfillment_Selected_${type}_${Date.now()}.xlsx`;
     document.body.appendChild(link);
     link.click();
     link.remove();
-    addLog(`Exported selected ${type} data as Excel .xls format`);
+    addLog(`Exported selected ${type} data as Excel .xlsx format`);
   };
 
   const handleCreateOrder = async (e) => {
@@ -765,6 +783,12 @@ export default function App() {
   const handleUpdateOrderStatus = async (orderId, newStatus, newTracking) => {
     const targetOrder = orders.find(o => o.id === orderId);
     
+    // Finance Rule Check: If voucher is already settled in cash ledger, prevent changing to Cancelled or editing
+    if (recordedVoucherIds.has(orderId)) {
+      alert('ဤ Voucher သည် Cash Management တွင် ငွေပေးချေပြီးစီးသွားပြီ (Cash Closed) ဖြစ်သဖြင့် အခြေအနေ ပြောင်းလဲ၍မရတော့ပါ။');
+      return;
+    }
+
     if (newStatus === 'Cancelled' && currentUser?.role !== 'Admin') {
       alert('ခွင့်ပြုချက်မရှိပါ: Cancelled အခြေအနေသို့ ပြောင်းလဲရန် Admin အဆင့် လိုအပ်ပါသည်။');
       return;
@@ -810,26 +834,37 @@ export default function App() {
 
     if (isDeliveryReturn && targetOrder.status !== 'Delivery Return') {
       for (const ordItem of targetOrder.items) {
+        // When returning to warehouse, create a new stock batch with today's date for accurate store charge calculation
         const stockItem = items.find(i => i.id === ordItem.itemId);
         if (stockItem) {
-          const restoredQty = (Number(stockItem.quantity) || 0) + (Number(ordItem.qty) || 1);
+          const todayStr = new Date().toISOString().split('T')[0];
+          const newBatchItem = {
+            id: `ITM-${Date.now().toString().slice(-4)}-${Math.floor(Math.random()*100)}`,
+            vendorId: targetOrder.vendorId,
+            name: `${stockItem.name} (Returned Batch)`,
+            category: stockItem.category,
+            price: stockItem.price,
+            cost: 0,
+            quantity: ordItem.qty,
+            damagedQty: 0,
+            stockInDate: todayStr, // Stock-in date resets to today for store charge calculation
+            sku: `${stockItem.sku}-RET`,
+            handlingFee: stockItem.handlingFee,
+            storeChargePerDay: stockItem.storeChargePerDay,
+            freeDays: stockItem.freeDays
+          };
           try {
-            await fetch(`${API_BASE_URL}/api/items/${stockItem.id}`, {
-              method: 'PUT',
+            await fetch(`${API_BASE_URL}/api/items`, {
+              method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ quantity: restoredQty })
+              body: JSON.stringify(newBatchItem)
             });
-          } catch (e) {}
+            setItems(prev => [newBatchItem, ...prev]);
+          } catch (e) {
+            setItems(prev => [{ ...newBatchItem }, ...prev]);
+          }
         }
       }
-
-      setItems(prev => prev.map(item => {
-        const foundOrdItem = targetOrder.items.find(oi => oi.itemId === item.id);
-        if (foundOrdItem) {
-          return { ...item, quantity: (Number(item.quantity) || 0) + (Number(foundOrdItem.qty) || 1) };
-        }
-        return item;
-      }));
 
       const newReturnObj = {
         id: `RET-${Date.now().toString().slice(-3)}`,
@@ -902,15 +937,32 @@ export default function App() {
       if (returnedQ > 0) {
         const stockItem = items.find(i => i.id === pItem.itemId);
         if (stockItem) {
-          const newQty = (Number(stockItem.quantity) || 0) + returnedQ;
+          const todayStr = new Date().toISOString().split('T')[0];
+          const newBatchItem = {
+            id: `ITM-${Date.now().toString().slice(-4)}-${Math.floor(Math.random()*100)}`,
+            vendorId: targetPartialOrder.vendorId,
+            name: `${pItem.name} (Partial Ret)`,
+            category: stockItem.category,
+            price: stockItem.price,
+            cost: 0,
+            quantity: returnedQ,
+            damagedQty: 0,
+            stockInDate: todayStr,
+            sku: `${stockItem.sku}-PRET`,
+            handlingFee: stockItem.handlingFee,
+            storeChargePerDay: stockItem.storeChargePerDay,
+            freeDays: stockItem.freeDays
+          };
           try {
-            await fetch(`${API_BASE_URL}/api/items/${stockItem.id}`, {
-              method: 'PUT',
+            await fetch(`${API_BASE_URL}/api/items`, {
+              method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ quantity: newQty })
+              body: JSON.stringify(newBatchItem)
             });
-          } catch (e) {}
-          setItems(prev => prev.map(i => i.id === stockItem.id ? { ...i, quantity: newQty } : i));
+            setItems(prev => [newBatchItem, ...prev]);
+          } catch (e) {
+            setItems(prev => [newBatchItem, ...prev]);
+          }
         }
 
         const retObj = {
@@ -962,6 +1014,10 @@ export default function App() {
   };
 
   const handleDeleteVoucher = async (orderId) => {
+    if (recordedVoucherIds.has(orderId)) {
+      alert('ဤ Voucher သည် Cash Management တွင် ငွေပေးချေပြီးစီးသွားပြီ (Cash Closed) ဖြစ်သဖြင့် ဖျက်၍မရပါ။');
+      return;
+    }
     if (currentUser?.role !== 'Admin') {
       alert('ခွင့်ပြုချက်မရှိပါ: Voucher များကို ဖျက်ရန် Admin အဆင့် လိုအပ်ပါသည်။');
       return;
@@ -1102,25 +1158,6 @@ export default function App() {
               )}
             </div>
 
-            {/* Backup & Restore Buttons */}
-            {currentUser.role === 'Admin' && (
-              <div className="flex items-center space-x-1">
-                <button 
-                  onClick={handleExportBackup}
-                  className="bg-slate-800 hover:bg-slate-700 text-emerald-400 text-xs px-2.5 py-2 rounded-lg font-semibold flex items-center space-x-1"
-                  title="Download System JSON Backup"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Backup</span>
-                </button>
-                <label className="bg-slate-800 hover:bg-slate-700 text-amber-400 text-xs px-2.5 py-2 rounded-lg font-semibold flex items-center space-x-1 cursor-pointer" title="Restore Backup JSON">
-                  <Upload className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Restore</span>
-                  <input type="file" accept=".json" onChange={handleImportBackup} className="hidden" />
-                </label>
-              </div>
-            )}
-
             <div className="bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700 flex items-center space-x-2">
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
               <div className="text-xs">
@@ -1129,13 +1166,46 @@ export default function App() {
               </div>
             </div>
 
-            <button 
-              onClick={() => { addLog('Logged out'); setCurrentUser(null); }}
-              className="bg-rose-600 hover:bg-rose-700 text-white text-xs px-3 py-2 rounded-lg font-semibold flex items-center space-x-1 transition-colors"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span>Logout</span>
-            </button>
+            {/* Lockout / Logout Menu Dropdown */}
+            <div className="relative">
+              <button 
+                onClick={() => setShowSystemMenu(!showSystemMenu)}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white p-2.5 rounded-lg transition-colors flex items-center justify-center"
+                title="System Menu (Backup, Restore, Logout)"
+              >
+                <Menu className="w-4 h-4" />
+              </button>
+
+              {showSystemMenu && (
+                <div className="absolute right-0 mt-2 w-48 bg-white text-slate-800 rounded-xl shadow-2xl border border-slate-200 z-50 overflow-hidden text-xs py-1">
+                  {currentUser.role === 'Admin' && (
+                    <>
+                      <button 
+                        onClick={() => { setShowSystemMenu(false); handleExportBackup(); }}
+                        className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center space-x-2 text-slate-700"
+                      >
+                        <Download className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Backup Database</span>
+                      </button>
+                      <label className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center space-x-2 text-slate-700 cursor-pointer">
+                        <Upload className="w-3.5 h-3.5 text-amber-600" />
+                        <span>Restore Database</span>
+                        <input type="file" accept=".json" onChange={(e) => { setShowSystemMenu(false); handleImportBackup(e); }} className="hidden" />
+                      </label>
+                      <div className="border-t my-1"></div>
+                    </>
+                  )}
+                  <button 
+                    onClick={() => { setShowSystemMenu(false); addLog('Logged out'); setCurrentUser(null); }}
+                    className="w-full text-left px-4 py-2 hover:bg-rose-50 text-rose-600 font-semibold flex items-center space-x-2"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>Lockout / Logout</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
           </div>
         </div>
 
@@ -1330,7 +1400,7 @@ export default function App() {
                     className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-1.5 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
                   >
                     <Download className="w-3.5 h-3.5" />
-                    <span>Export All Excel (.xls)</span>
+                    <span>Export All Excel (.xlsx)</span>
                   </button>
                 </div>
 
@@ -1545,17 +1615,37 @@ export default function App() {
           <div className="space-y-4">
             
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-              <div className="flex items-center space-x-2 w-full sm:w-auto">
+              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                 <div className="relative w-full sm:w-64">
                   <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
                   <input 
                     type="text"
-                    placeholder="Search Order, Phone, Tracking..."
+                    placeholder="Search ID, Phone, Tracking..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="w-full pl-9 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
+
+                {currentUser.role !== 'Vendor' && (
+                  <select 
+                    value={vendorFilter} 
+                    onChange={(e) => setVendorFilter(e.target.value)}
+                    className="border border-slate-300 rounded-lg text-xs px-3 py-1.5 bg-white font-medium"
+                  >
+                    <option value="ALL">All Vendors</option>
+                    {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                  </select>
+                )}
+
+                <select 
+                  value={deliveryFilter} 
+                  onChange={(e) => setDeliveryFilter(e.target.value)}
+                  className="border border-slate-300 rounded-lg text-xs px-3 py-1.5 bg-white font-medium"
+                >
+                  <option value="ALL">All Delivery Services</option>
+                  {deliveries.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+                </select>
               </div>
 
               <div className="flex items-center space-x-2">
@@ -1564,7 +1654,7 @@ export default function App() {
                   className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>Export Selected Excel (.xls) {selectedOrderIds.length > 0 ? `(${selectedOrderIds.length})` : ''}</span>
+                  <span>Export Excel (.xlsx) {selectedOrderIds.length > 0 ? `(${selectedOrderIds.length})` : ''}</span>
                 </button>
 
                 {currentUser.role !== 'Vendor' && (
@@ -1607,87 +1697,87 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {scopedOrders
-                      .filter(o => o.id.toLowerCase().includes(searchTerm.toLowerCase()) || o.customerName.toLowerCase().includes(searchTerm.toLowerCase()))
-                      .map(order => {
-                        const vendor = vendors.find(v => v.id === order.vendorId);
-                        const isLocked = currentUser.role === 'Vendor' || (currentUser.role !== 'Admin' && (order.status === 'Delivered' || order.status === 'Cancelled'));
-                        const isSelected = selectedOrderIds.includes(order.id);
+                    {scopedOrders.map(order => {
+                      const vendor = vendors.find(v => v.id === order.vendorId);
+                      const isCashClosed = recordedVoucherIds.has(order.id);
+                      const isLocked = currentUser.role === 'Vendor' || isCashClosed || (currentUser.role !== 'Admin' && (order.status === 'Delivered' || order.status === 'Cancelled'));
+                      const isSelected = selectedOrderIds.includes(order.id);
 
-                        return (
-                          <tr key={order.id} className={`hover:bg-slate-50 ${order.cancelled ? 'bg-rose-50/50 opacity-80' : ''}`}>
-                            <td className="p-3 text-center">
-                              <input 
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setSelectedOrderIds([...selectedOrderIds, order.id]);
-                                  } else {
-                                    setSelectedOrderIds(selectedOrderIds.filter(id => id !== order.id));
-                                  }
-                                }}
-                              />
-                            </td>
-                            <td className="p-3 font-bold text-indigo-600">
-                              {order.id}
-                              <div className="text-[10px] text-slate-400 font-normal">{order.createdAt}</div>
-                            </td>
-                            <td className="p-3 font-medium text-slate-700">{vendor ? vendor.name : order.vendorId}</td>
-                            <td className="p-3">
-                              <p className="font-semibold text-slate-800">{order.customerName}</p>
-                              <p className="text-slate-500">{order.customerPhone}</p>
-                            </td>
-                            <td className="p-3">
-                              <p className="font-semibold text-slate-700">{order.deliveryService}</p>
-                              <p className="text-slate-400 font-mono text-[10px]">Trk: {order.trackingNo}</p>
-                            </td>
-                            <td className="p-3 font-bold text-slate-800">
-                              {(Number(order.totalCod) || 0).toLocaleString()} Ks
-                            </td>
-                            <td className="p-3">
-                              <select 
-                                disabled={isLocked}
-                                value={order.status}
-                                onChange={(e) => handleUpdateOrderStatus(order.id, e.target.value)}
-                                className={`text-xs font-semibold px-2 py-1 rounded border ${
-                                  order.cancelled ? 'bg-rose-100 text-rose-700 border-rose-200' :
-                                  order.status === 'Delivered' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                                  order.status === 'Partial Return' ? 'bg-purple-50 text-purple-700 border-purple-200' :
-                                  'bg-amber-50 text-amber-700 border-amber-200'
-                                } ${isLocked ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'}`}
-                              >
-                                <option value="Pending">Pending</option>
-                                <option value="In-Transit">In-Transit</option>
-                                <option value="Delivered">Delivered</option>
-                                <option value="Partial Return">Partial Return</option>
-                                <option value="Delivery Return">Delivery Return</option>
-                                {currentUser.role === 'Admin' && <option value="Cancelled">Cancelled</option>}
-                              </select>
-                            </td>
-                            <td className="p-3 text-right space-x-1.5 whitespace-nowrap">
+                      return (
+                        <tr key={order.id} className={`hover:bg-slate-50 ${order.cancelled ? 'bg-rose-50/50 opacity-80' : ''}`}>
+                          <td className="p-3 text-center">
+                            <input 
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedOrderIds([...selectedOrderIds, order.id]);
+                                } else {
+                                  setSelectedOrderIds(selectedOrderIds.filter(id => id !== order.id));
+                                }
+                              }}
+                            />
+                          </td>
+                          <td className="p-3 font-bold text-indigo-600">
+                            {order.id}
+                            {isCashClosed && <span className="ml-1 text-[9px] bg-emerald-100 text-emerald-700 px-1 rounded font-semibold">Cash Closed</span>}
+                            <div className="text-[10px] text-slate-400 font-normal">{order.createdAt}</div>
+                          </td>
+                          <td className="p-3 font-medium text-slate-700">{vendor ? vendor.name : order.vendorId}</td>
+                          <td className="p-3">
+                            <p className="font-semibold text-slate-800">{order.customerName}</p>
+                            <p className="text-slate-500">{order.customerPhone}</p>
+                          </td>
+                          <td className="p-3">
+                            <p className="font-semibold text-slate-700">{order.deliveryService}</p>
+                            <p className="text-slate-400 font-mono text-[10px]">Trk: {order.trackingNo}</p>
+                          </td>
+                          <td className="p-3 font-bold text-slate-800">
+                            {(Number(order.totalCod) || 0).toLocaleString()} Ks
+                          </td>
+                          <td className="p-3">
+                            <select 
+                              disabled={isLocked}
+                              value={order.status}
+                              onChange={(e) => handleUpdateOrderStatus(order.id, e.target.value)}
+                              className={`text-xs font-semibold px-2 py-1 rounded border ${
+                                order.cancelled ? 'bg-rose-100 text-rose-700 border-rose-200' :
+                                order.status === 'Delivered' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                order.status === 'Partial Return' ? 'bg-purple-50 text-purple-700 border-purple-200' :
+                                'bg-amber-50 text-amber-700 border-amber-200'
+                              } ${isLocked ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'}`}
+                            >
+                              <option value="Pending">Pending</option>
+                              <option value="In-Transit">In-Transit</option>
+                              <option value="Delivered">Delivered</option>
+                              <option value="Partial Return">Partial Return</option>
+                              <option value="Delivery Return">Delivery Return</option>
+                              {currentUser.role === 'Admin' && <option value="Cancelled">Cancelled</option>}
+                            </select>
+                          </td>
+                          <td className="p-3 text-right space-x-1.5 whitespace-nowrap">
+                            <button 
+                              onClick={() => { setSelectedOrder(order); setShowVoucherModal(true); }}
+                              className="bg-slate-100 hover:bg-slate-200 text-slate-700 p-1.5 rounded text-[11px] font-semibold inline-flex items-center space-x-1"
+                              title="Print / View Voucher"
+                            >
+                              <Printer className="w-3.5 h-3.5" />
+                              <span>Voucher</span>
+                            </button>
+
+                            {currentUser.role === 'Admin' && order.cancelled && !isCashClosed && (
                               <button 
-                                onClick={() => { setSelectedOrder(order); setShowVoucherModal(true); }}
-                                className="bg-slate-100 hover:bg-slate-200 text-slate-700 p-1.5 rounded text-[11px] font-semibold inline-flex items-center space-x-1"
-                                title="Print / View Voucher"
+                                onClick={() => handleDeleteVoucher(order.id)}
+                                className="bg-rose-50 hover:bg-rose-100 text-rose-700 p-1.5 rounded text-[11px] font-semibold inline-flex items-center space-x-1"
+                                title="Delete Permanent (Cancelled Only)"
                               >
-                                <Printer className="w-3.5 h-3.5" />
-                                <span>Voucher</span>
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>Delete</span>
                               </button>
-
-                              {currentUser.role === 'Admin' && order.cancelled && (
-                                <button 
-                                  onClick={() => handleDeleteVoucher(order.id)}
-                                  className="bg-rose-50 hover:bg-rose-100 text-rose-700 p-1.5 rounded text-[11px] font-semibold inline-flex items-center space-x-1"
-                                  title="Delete Permanent (Cancelled Only)"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                  <span>Delete</span>
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                        );
+                            )}
+                          </td>
+                        </tr>
+                      );
                     })}
                   </tbody>
                 </table>
@@ -1700,7 +1790,18 @@ export default function App() {
           <div className="space-y-4">
             
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-              <div className="flex items-center space-x-3 w-full sm:w-auto">
+              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                <div className="relative w-full sm:w-64">
+                  <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+                  <input 
+                    type="text"
+                    placeholder="Search SKU, Item name, Category..."
+                    value={inventorySearch}
+                    onChange={(e) => setInventorySearch(e.target.value)}
+                    className="w-full pl-9 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
                 {currentUser.role !== 'Vendor' && (
                   <select 
                     value={vendorFilter} 
@@ -1719,7 +1820,7 @@ export default function App() {
                   className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>Export Selected Excel (.xls) {selectedItemIds.length > 0 ? `(${selectedItemIds.length})` : ''}</span>
+                  <span>Export Excel (.xlsx) {selectedItemIds.length > 0 ? `(${selectedItemIds.length})` : ''}</span>
                 </button>
 
                 {currentUser.role !== 'Vendor' && (
@@ -1770,6 +1871,8 @@ export default function App() {
                       const vendor = vendors.find(v => v.id === item.vendorId);
                       const storeCharge = calculateStoreCharge(item);
                       const isSelected = selectedItemIds.includes(item.id);
+                      const todayDateStr = new Date().toISOString().split('T')[0];
+                      const isEditableToday = item.stockInDate === todayDateStr || currentUser.role === 'Admin';
 
                       return (
                         <tr key={item.id} className="hover:bg-slate-50">
@@ -1801,7 +1904,7 @@ export default function App() {
                               {item.quantity} pcs
                             </span>
                           </td>
-                          <td className="p-3 text-slate-500">{item.stockInDate}</td>
+                          <td className="p-3 text-slate-500 font-mono text-[11px]">{item.stockInDate}</td>
                           <td className="p-3">
                             {storeCharge > 0 ? (
                               <span className="text-amber-600 font-bold flex items-center">
@@ -1812,18 +1915,40 @@ export default function App() {
                               <span className="text-emerald-600 text-[11px]">Free Period</span>
                             )}
                           </td>
-                          <td className="p-3 text-right">
+                          <td className="p-3 text-right space-x-2">
                             {currentUser.role !== 'Vendor' && (
-                              <button 
-                                onClick={() => {
-                                  setTargetReturnItem(item);
-                                  setReturnForm({ qty: 1, reason: 'Overstock / Damaged Return' });
-                                  setShowReturnModal(true);
-                                }}
-                                className="text-xs text-indigo-600 hover:underline font-semibold"
-                              >
-                                Return Stock
-                              </button>
+                              <>
+                                {isEditableToday ? (
+                                  <button 
+                                    onClick={() => {
+                                      const newQtyStr = prompt(`Edit Qty for ${item.name}:`, item.quantity);
+                                      if (newQtyStr !== null) {
+                                        const nQ = Number(newQtyStr);
+                                        if (!isNaN(nQ)) {
+                                          setItems(items.map(i => i.id === item.id ? { ...i, quantity: nQ } : i));
+                                          addLog(`Edited stock quantity for ${item.name} to ${nQ}`);
+                                        }
+                                      }
+                                    }}
+                                    className="text-xs text-indigo-600 hover:underline font-semibold"
+                                  >
+                                    Edit
+                                  </button>
+                                ) : (
+                                  <span className="text-[10px] text-slate-400 cursor-not-allowed" title="Past date batch cannot be edited to protect calculations">Locked</span>
+                                )}
+
+                                <button 
+                                  onClick={() => {
+                                    setTargetReturnItem(item);
+                                    setReturnForm({ qty: 1, reason: 'Overstock / Damaged Return' });
+                                    setShowReturnModal(true);
+                                  }}
+                                  className="text-xs text-rose-600 hover:underline font-semibold"
+                                >
+                                  Return Stock
+                                </button>
+                              </>
                             )}
                           </td>
                         </tr>
@@ -1838,10 +1963,18 @@ export default function App() {
 
         {activeTab === 'returns' && (
           <div className="space-y-4">
-            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
-              <div>
-                <h3 className="font-bold text-slate-800 text-sm">Return & Damage Control</h3>
-                <p className="text-xs text-slate-500">Track delivery returns and damaged stock returned to vendors</p>
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+              <div className="flex items-center space-x-2 w-full sm:w-auto">
+                <div className="relative w-full sm:w-64">
+                  <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+                  <input 
+                    type="text"
+                    placeholder="Search ID, Item, Reason..."
+                    value={returnsSearch}
+                    onChange={(e) => setReturnsSearch(e.target.value)}
+                    className="w-full pl-9 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
               </div>
 
               <button 
@@ -1849,7 +1982,7 @@ export default function App() {
                 className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>Export Selected Excel (.xls) {selectedReturnIds.length > 0 ? `(${selectedReturnIds.length})` : ''}</span>
+                <span>Export Excel (.xlsx) {selectedReturnIds.length > 0 ? `(${selectedReturnIds.length})` : ''}</span>
               </button>
             </div>
 
@@ -1881,7 +2014,9 @@ export default function App() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {returns
-                    .filter(ret => currentUser.role !== 'Vendor' || ret.vendorId === currentUser.vendorId)
+                    .filter(ret => (currentUser.role !== 'Vendor' || ret.vendorId === currentUser.vendorId) && 
+                      (!returnsSearch.trim() || ret.id.toLowerCase().includes(returnsSearch.toLowerCase()) || ret.itemName.toLowerCase().includes(returnsSearch.toLowerCase()) || ret.reason.toLowerCase().includes(returnsSearch.toLowerCase()))
+                    )
                     .map(ret => {
                       const isSelected = selectedReturnIds.includes(ret.id);
                       return (
@@ -1911,7 +2046,7 @@ export default function App() {
                           <td className="p-3 font-bold">{ret.qty}</td>
                           <td className="p-3 text-slate-500">{ret.reason}</td>
                           <td className="p-3 font-medium text-slate-700">{ret.status}</td>
-                          <td className="p-3 text-slate-400">{ret.date}</td>
+                          <td className="p-3 text-slate-400 font-mono text-[11px]">{ret.date}</td>
                         </tr>
                       );
                   })}
@@ -1928,7 +2063,7 @@ export default function App() {
               <div>
                 <h3 className="font-bold text-slate-800 text-sm">Vendors Management & Client Payout Reports</h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Manage vendors, bank accounts, net payable calculations, and official client payout statements.
+                  Manage vendors, bank accounts, net payable calculations, and official client payout statements (.xlsx).
                 </p>
               </div>
 
@@ -2019,16 +2154,16 @@ export default function App() {
                         className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold py-2 rounded-lg transition-colors flex items-center justify-center space-x-1 shadow-sm"
                       >
                         <Download className="w-3.5 h-3.5" />
-                        <span>Client Payout Report (.xls)</span>
+                        <span>Client Payout Report (.xlsx)</span>
                       </button>
                       
                       <button 
                         onClick={() => {
                           exportSelectedToExcel(`settlement_${vendor.id}`, vendorDeliveredOrders, vendorDeliveredOrders.map(o => o.id));
-                          addLog(`Exported full settlement statement for Vendor ${vendor.name}`);
+                          addLog(`Exported full settlement statement (.xlsx) for Vendor ${vendor.name}`);
                         }}
                         className="bg-slate-900 hover:bg-slate-800 text-white text-xs px-3 py-2 rounded-lg transition-colors flex items-center justify-center"
-                        title="Full Order Details Excel"
+                        title="Full Order Details Excel (.xlsx)"
                       >
                         <FileSpreadsheet className="w-3.5 h-3.5" />
                       </button>
@@ -2122,12 +2257,12 @@ export default function App() {
                     <button 
                       onClick={() => {
                         exportSelectedToExcel(`delivery_${del.id}`, delOrders, delOrders.map(o => o.id));
-                        addLog(`Exported delivery report for ${del.name}`);
+                        addLog(`Exported delivery report (.xlsx) for ${del.name}`);
                       }}
                       className="w-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold py-2 rounded-lg transition-colors flex items-center justify-center space-x-1"
                     >
                       <Download className="w-3.5 h-3.5" />
-                      <span>Export Delivery Report (.xls)</span>
+                      <span>Export Delivery Report (.xlsx)</span>
                     </button>
                   </div>
                 );
@@ -2139,10 +2274,18 @@ export default function App() {
         {/* Cash Management Tab */}
         {activeTab === 'cash_ledger' && currentUser.role !== 'Vendor' && (
           <div className="space-y-4">
-            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
-              <div>
-                <h3 className="font-bold text-slate-800 text-sm">Cash Management & Voucher-based Settlement Ledger</h3>
-                <p className="text-xs text-slate-500">Record actual cash inflow (COD flow by Delivery vouchers) and actual payout (Vendor payout by vouchers with auto-deducted handling fee & store charges)</p>
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+              <div className="flex items-center space-x-2 w-full sm:w-auto">
+                <div className="relative w-full sm:w-64">
+                  <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+                  <input 
+                    type="text"
+                    placeholder="Search ID, Ref No, Description..."
+                    value={cashSearch}
+                    onChange={(e) => setCashSearch(e.target.value)}
+                    className="w-full pl-9 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
               </div>
 
               <div className="flex space-x-2">
@@ -2151,13 +2294,14 @@ export default function App() {
                   className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>Export Payment Excel (.xls)</span>
+                  <span>Export Excel (.xlsx)</span>
                 </button>
                 <button 
                   onClick={() => {
                     setCashFlowType('COD_IN');
                     setSelectedPartnerId('');
                     setSelectedVoucherIds([]);
+                    setCashTransactionNo('');
                     setCashDescription('');
                     setShowCashModal(true);
                   }}
@@ -2212,45 +2356,47 @@ export default function App() {
                     <th className="p-3">ID</th>
                     <th className="p-3">Type</th>
                     <th className="p-3">Reference / Voucher</th>
-                    <th className="p-3">Description</th>
+                    <th className="p-3">Note / Description</th>
                     <th className="p-3">Amount</th>
                     <th className="p-3">Date</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {cashLedger.map(c => {
-                    const isSelected = selectedCashIds.includes(c.id);
-                    return (
-                      <tr key={c.id} className="hover:bg-slate-50">
-                        <td className="p-3 text-center">
-                          <input 
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setSelectedCashIds([...selectedCashIds, c.id]);
-                              } else {
-                                setSelectedCashIds(selectedCashIds.filter(id => id !== c.id));
-                              }
-                            }}
-                          />
-                        </td>
-                        <td className="p-3 font-mono text-slate-500">{c.id}</td>
-                        <td className="p-3">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            c.type === 'COD_IN' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
-                          }`}>
-                            {c.type}
-                          </span>
-                        </td>
-                        <td className="p-3 font-bold text-indigo-600">{c.referenceId || '-'}</td>
-                        <td className="p-3 text-slate-700">{c.description}</td>
-                        <td className={`p-3 font-bold ${c.type === 'COD_IN' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                          {c.type === 'COD_IN' ? '+' : '-'} {c.amount.toLocaleString()} Ks
-                        </td>
-                        <td className="p-3 text-slate-400">{c.date}</td>
-                      </tr>
-                    );
+                  {cashLedger
+                    .filter(c => !cashSearch.trim() || c.id.toLowerCase().includes(cashSearch.toLowerCase()) || (c.referenceId && c.referenceId.toLowerCase().includes(cashSearch.toLowerCase())) || (c.description && c.description.toLowerCase().includes(cashSearch.toLowerCase())))
+                    .map(c => {
+                      const isSelected = selectedCashIds.includes(c.id);
+                      return (
+                        <tr key={c.id} className="hover:bg-slate-50">
+                          <td className="p-3 text-center">
+                            <input 
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedCashIds([...selectedCashIds, c.id]);
+                                } else {
+                                  setSelectedCashIds(selectedCashIds.filter(id => id !== c.id));
+                                }
+                              }}
+                            />
+                          </td>
+                          <td className="p-3 font-mono text-slate-500">{c.id}</td>
+                          <td className="p-3">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              c.type === 'COD_IN' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
+                            }`}>
+                              {c.type}
+                            </span>
+                          </td>
+                          <td className="p-3 font-bold text-indigo-600">{c.referenceId || '-'}</td>
+                          <td className="p-3 text-slate-700">{c.description || '-'}</td>
+                          <td className={`p-3 font-bold ${c.type === 'COD_IN' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                            {c.type === 'COD_IN' ? '+' : '-'} {c.amount.toLocaleString()} Ks
+                          </td>
+                          <td className="p-3 text-slate-400 font-mono text-[11px]">{c.date}</td>
+                        </tr>
+                      );
                   })}
                 </tbody>
               </table>
@@ -2351,7 +2497,7 @@ export default function App() {
                 className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>Export Logs (.xls)</span>
+                <span>Export Logs (.xlsx)</span>
               </button>
             </div>
 
@@ -2388,12 +2534,12 @@ export default function App() {
 
       </main>
 
-      {/* Advanced Cash Transaction Modal (Voucher-based COD & Vendor Payout Flow with duplicate prevention) */}
+      {/* Advanced Cash Transaction Modal with Mandatory Transaction No */}
       {showCashModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b pb-3">
-              <h3 className="font-bold text-slate-800 text-base">Add Cash Transaction (Voucher Flow)</h3>
+              <h3 className="font-bold text-slate-800 text-base">Add Cash Transaction (Voucher Flow & Transfer Ref)</h3>
               <button onClick={() => setShowCashModal(false)} className="text-slate-400 hover:text-slate-600 text-lg">✕</button>
             </div>
 
@@ -2449,7 +2595,7 @@ export default function App() {
               {/* Voucher Selection Table (Filtered to exclude already recorded vouchers) */}
               {selectedPartnerId && (
                 <div className="space-y-2">
-                  <label className="block font-semibold text-slate-700">Select Outstanding Vouchers for Actual Payment (Already recorded vouchers are filtered out):</label>
+                  <label className="block font-semibold text-slate-700">Select Outstanding Vouchers (Already recorded vouchers are filtered out):</label>
                   <div className="border rounded-lg max-h-56 overflow-y-auto">
                     <table className="w-full text-left text-xs">
                       <thead className="bg-slate-100 text-slate-600 sticky top-0">
@@ -2541,11 +2687,22 @@ export default function App() {
               )}
 
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Description / Notes</label>
+                <label className="block font-semibold text-slate-700 mb-1">Bank / KPay Transaction No. / Ref No. *</label>
+                <input 
+                  type="text" required
+                  value={cashTransactionNo}
+                  onChange={(e) => setCashTransactionNo(e.target.value)}
+                  placeholder="e.g. KPay-TXN-99882233 or Bank Ref No."
+                  className="w-full border border-slate-300 rounded-lg p-2 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Note / Description (Optional)</label>
                 <textarea 
                   rows={2} value={cashDescription}
                   onChange={(e) => setCashDescription(e.target.value)}
-                  placeholder="Optional notes for actual payment transaction..."
+                  placeholder="Optional notes for payment transaction..."
                   className="w-full border border-slate-300 rounded-lg p-2"
                 />
               </div>
@@ -2557,6 +2714,10 @@ export default function App() {
                   onClick={async () => {
                     if (!selectedPartnerId || selectedVoucherIds.length === 0) {
                       alert('ကျေးဇူးပြု၍ Partner နှင့် Voucher များကို အနည်းဆုံး တစ်ခု ရွေးချယ်ပါ။');
+                      return;
+                    }
+                    if (!cashTransactionNo.trim()) {
+                      alert('ကျေးဇူးပြု၍ ငွေလွှဲအထောက်အထား Transaction No. ထည့်သွင်းပါ။');
                       return;
                     }
 
@@ -2581,7 +2742,7 @@ export default function App() {
                     const cObj = {
                       id: `CASH-${Date.now().toString().slice(-4)}`,
                       type: cashFlowType,
-                      referenceId: `${selectedPartnerId} [${selectedVoucherIds.join(', ')}]`,
+                      referenceId: `${selectedPartnerId} [${selectedVoucherIds.join(', ')}] (Ref: ${cashTransactionNo})`,
                       amount: totalAmount,
                       description: cashDescription || `${cashFlowType} for ${selectedVoucherIds.length} vouchers`,
                       date: new Date().toLocaleDateString(),
@@ -2596,7 +2757,7 @@ export default function App() {
                       });
                       setCashLedger([cObj, ...cashLedger]);
                       setShowCashModal(false);
-                      addLog(`Recorded actual cash payment ${cashFlowType} of ${totalAmount} Ks`);
+                      addLog(`Recorded actual cash payment ${cashFlowType} of ${totalAmount} Ks with Ref: ${cashTransactionNo}`);
                     } catch (err) {
                       setCashLedger([cObj, ...cashLedger]);
                       setShowCashModal(false);
@@ -2921,7 +3082,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Add Stock Item Modal */}
+      {/* Add Stock Item Modal (Creates new batch with today's stockInDate for accurate store charges) */}
       {showItemModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
@@ -2936,7 +3097,7 @@ export default function App() {
                 onClick={() => setIsExistingItemMode(true)}
                 className={`flex-1 py-1.5 rounded-md transition-all ${isExistingItemMode ? 'bg-white shadow text-indigo-600' : 'text-slate-600'}`}
               >
-                Existing Item (Restock)
+                Existing Item (Restock Batch)
               </button>
               <button 
                 type="button"
@@ -2949,6 +3110,8 @@ export default function App() {
 
             <form onSubmit={async (e) => {
               e.preventDefault();
+              const todayStr = new Date().toISOString().split('T')[0];
+
               if (isExistingItemMode) {
                 const targetExisting = items.find(i => i.id === newItem.existingItemId);
                 if (!targetExisting) {
@@ -2956,18 +3119,37 @@ export default function App() {
                   return;
                 }
                 const addQty = Number(newItem.quantity) || 0;
-                const newQty = (Number(targetExisting.quantity) || 0) + addQty;
+                
+                // Create a new batch row for restock so store charges calculate accurately from today onwards
+                const newBatchItem = {
+                  id: `ITM-${Date.now().toString().slice(-4)}-${Math.floor(Math.random()*100)}`,
+                  vendorId: targetExisting.vendorId,
+                  name: `${targetExisting.name} (Restock)`,
+                  category: targetExisting.category,
+                  price: targetExisting.price,
+                  cost: 0,
+                  quantity: addQty,
+                  damagedQty: 0,
+                  stockInDate: todayStr,
+                  sku: `${targetExisting.sku}-RESTOCK`,
+                  handlingFee: targetExisting.handlingFee,
+                  storeChargePerDay: targetExisting.storeChargePerDay,
+                  freeDays: targetExisting.freeDays
+                };
 
                 try {
-                  await fetch(`${API_BASE_URL}/api/items/${targetExisting.id}`, {
-                    method: 'PUT',
+                  await fetch(`${API_BASE_URL}/api/items`, {
+                    method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ quantity: newQty })
+                    body: JSON.stringify(newBatchItem)
                   });
-                  setItems(items.map(i => i.id === targetExisting.id ? { ...i, quantity: newQty } : i));
-                  addLog(`Restocked ${addQty} pcs to existing item ${targetExisting.name}`);
+                  setItems([newBatchItem, ...items]);
+                  addLog(`Added restock batch of ${addQty} pcs for ${targetExisting.name} with date ${todayStr}`);
                   setShowItemModal(false);
-                } catch (err) {}
+                } catch (err) {
+                  setItems([newBatchItem, ...items]);
+                  setShowItemModal(false);
+                }
               } else {
                 if (!newItem.vendorId || !newItem.name) {
                   alert('Vendor နှင့် ပစ္စည်းနာမည် ထည့်ရန် လိုအပ်ပါသည်။');
@@ -2985,7 +3167,7 @@ export default function App() {
                   cost: 0,
                   quantity: Number(newItem.quantity) || 0,
                   damagedQty: 0,
-                  stockInDate: new Date().toISOString().split('T')[0],
+                  stockInDate: todayStr,
                   sku: autoSku,
                   handlingFee: Number(newItem.handlingFee) || 500,
                   storeChargePerDay: Number(newItem.storeChargePerDay) || 30,
@@ -2999,9 +3181,12 @@ export default function App() {
                     body: JSON.stringify(itemObj)
                   });
                   setItems([itemObj, ...items]);
-                  addLog(`Added new stock item ${itemObj.name} with auto SKU ${autoSku}`);
+                  addLog(`Added new stock item ${itemObj.name} with date ${todayStr} and SKU ${autoSku}`);
                   setShowItemModal(false);
-                } catch (err) {}
+                } catch (err) {
+                  setItems([itemObj, ...items]);
+                  setShowItemModal(false);
+                }
               }
             }} className="space-y-3 text-xs">
               
@@ -3036,7 +3221,7 @@ export default function App() {
                     <option value="">-- Choose Item Stock --</option>
                     {items
                       .filter(i => newItem.vendorId && i.vendorId === newItem.vendorId)
-                      .map(i => <option key={i.id} value={i.id}>{i.name} (Current: {i.quantity} pcs)</option>)}
+                      .map(i => <option key={i.id} value={i.id}>{i.name} (Batch Date: {i.stockInDate})</option>)}
                   </select>
                 </div>
               ) : (
@@ -3081,7 +3266,7 @@ export default function App() {
               <div className="pt-3 flex space-x-2">
                 <button type="button" onClick={() => setShowItemModal(false)} className="w-1/2 bg-slate-100 py-2.5 rounded-lg font-semibold">Cancel</button>
                 <button type="submit" className="w-1/2 bg-indigo-600 text-white py-2.5 rounded-lg font-semibold">
-                  {isExistingItemMode ? 'Confirm Restock' : 'Stock-In & Auto SKU'}
+                  {isExistingItemMode ? 'Confirm Restock Batch' : 'Stock-In & Auto SKU'}
                 </button>
               </div>
             </form>
