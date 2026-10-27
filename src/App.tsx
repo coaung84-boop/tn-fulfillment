@@ -80,8 +80,8 @@ const INITIAL_ORDERS = [
 ];
 
 const INITIAL_RETURNS = [
-  { id: 'RET-001', orderId: 'TN-ORD-8800', vendorId: 'VND-101', itemName: 'Hydrating Serum', qty: 1, type: 'Delivery Return', reason: 'Customer Refused', status: 'In Warehouse', date: '2026-10-19' },
-  { id: 'RET-002', itemId: 'ITM-001', vendorId: 'VND-101', itemName: 'Matte Lipstick (Red)', qty: 2, type: 'Vendor Return (Damage)', reason: 'Expired packaging', status: 'Returned to Vendor', date: new Date().toLocaleDateString() }
+  { id: 'RET-001', orderId: 'TN-ORD-8800', vendorId: 'VND-101', itemId: 'ITM-002', itemName: 'Hydrating Serum', qty: 1, type: 'Delivery Return', reason: 'Customer Refused', status: 'In Warehouse', date: '2026-10-19' },
+  { id: 'RET-002', orderId: '', itemId: 'ITM-001', vendorId: 'VND-101', itemName: 'Matte Lipstick (Red)', qty: 2, type: 'Vendor Return (Damage)', reason: 'Expired packaging', status: 'Returned to Vendor', date: new Date().toLocaleDateString() }
 ];
 
 const INITIAL_LOGS = [
@@ -108,12 +108,23 @@ export default function App() {
   const [showNotificationDropdown, setShowNotificationDropdown] = useState(false);
   const [showSystemMenu, setShowSystemMenu] = useState(false);
 
-  // Unified Search State ("Search by...")
-  const [searchMode, setSearchMode] = useState('ID'); // 'ID', 'DATE', 'VENDOR', 'DELIVERY'
-  const [searchQueryVal, setSearchQueryVal] = useState('');
-  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+  // Tab-specific Unified Search States ("Search by...")
+  const [orderSearchMode, setOrderSearchMode] = useState('ID');
+  const [orderSearchVal, setOrderSearchVal] = useState('');
+  const [showOrderSearchDropdown, setShowOrderSearchDropdown] = useState(false);
 
-  const [vendorFilter, setVendorFilter] = useState('ALL');
+  const [invSearchMode, setInvSearchMode] = useState('ID');
+  const [invSearchVal, setInvSearchVal] = useState('');
+  const [showInvSearchDropdown, setShowInvSearchDropdown] = useState(false);
+
+  const [retSearchMode, setRetSearchMode] = useState('ID');
+  const [retSearchVal, setRetSearchVal] = useState('');
+  const [showRetSearchDropdown, setShowRetSearchDropdown] = useState(false);
+
+  const [cashSearchMode, setCashSearchMode] = useState('ID');
+  const [cashSearchVal, setCashSearchVal] = useState('');
+  const [showCashSearchDropdown, setShowCashSearchDropdown] = useState(false);
+
   const [deliveryFilter, setDeliveryFilter] = useState('ALL');
 
   const [selectedOrderIds, setSelectedOrderIds] = useState([]);
@@ -135,9 +146,19 @@ export default function App() {
   const [showDeliveryModal, setShowDeliveryModal] = useState(false);
   const [showReturnModal, setShowReturnModal] = useState(false);
   const [showCashModal, setShowCashModal] = useState(false);
+
+  // Edit Inventory Item Modal State (All fields editable)
+  const [showEditItemModal, setShowEditItemModal] = useState(false);
+  const [editingInventoryItem, setEditingInventoryItem] = useState(null);
+  const [editInventoryForm, setEditInventoryForm] = useState({ name: '', category: '', price: '', quantity: '', handlingFee: '', storeChargePerDay: '', freeDays: '' });
+
+  // Edit Return Modal State (Item Name and Quantity editable)
+  const [showEditReturnModal, setShowEditReturnModal] = useState(false);
+  const [editingReturnItem, setEditingReturnItem] = useState(null);
+  const [editReturnForm, setEditReturnForm] = useState({ itemName: '', qty: 1, reason: '' });
   
   // Advanced Cash Modal State
-  const [cashFlowType, setCashFlowType] = useState('COD_IN'); // 'COD_IN' or 'VENDOR_OUT'
+  const [cashFlowType, setCashFlowType] = useState('COD_IN');
   const [selectedPartnerId, setSelectedPartnerId] = useState('');
   const [selectedVoucherIds, setSelectedVoucherIds] = useState([]);
   const [cashTransactionNo, setCashTransactionNo] = useState('');
@@ -278,11 +299,6 @@ export default function App() {
     if (found) {
       setCurrentUser(found);
       setLoginError('');
-      if (found.role === 'Vendor') {
-        setVendorFilter(found.vendorId);
-      } else {
-        setVendorFilter('ALL');
-      }
     } else {
       setLoginError('Username သို့မဟုတ် Password မှားယွင်းနေပါသည်။');
     }
@@ -300,7 +316,6 @@ export default function App() {
     });
   };
 
-  // Helper to get set of voucher IDs that have COD collection recorded in cash ledger (COD_IN)
   const codCollectedVoucherIds = useMemo(() => {
     const ids = new Set();
     cashLedger.filter(c => c.type === 'COD_IN').forEach(c => {
@@ -314,7 +329,6 @@ export default function App() {
     return ids;
   }, [cashLedger]);
 
-  // Helper to get set of voucher IDs that have already been paid out to vendors (VENDOR_OUT)
   const recordedVoucherIds = useMemo(() => {
     const ids = new Set();
     cashLedger.filter(c => c.type === 'VENDOR_OUT').forEach(c => {
@@ -328,52 +342,85 @@ export default function App() {
     return ids;
   }, [cashLedger]);
 
+  // Scoped Items with Unified Search
   const scopedItems = useMemo(() => {
     let res = items;
     if (currentUser && currentUser.role === 'Vendor') {
       res = res.filter(i => i.vendorId === currentUser.vendorId);
-    } else if (vendorFilter !== 'ALL') {
-      res = res.filter(i => i.vendorId === vendorFilter);
     }
-    if (searchQueryVal.trim()) {
-      const q = searchQueryVal.toLowerCase();
-      if (searchMode === 'ID') {
-        res = res.filter(i => i.id.toLowerCase().includes(q) || i.sku.toLowerCase().includes(q));
-      } else if (searchMode === 'DATE') {
+    if (invSearchVal.trim()) {
+      const q = invSearchVal.toLowerCase();
+      if (invSearchMode === 'ID') {
+        res = res.filter(i => i.id.toLowerCase().includes(q) || i.sku.toLowerCase().includes(q) || i.name.toLowerCase().includes(q));
+      } else if (invSearchMode === 'DATE') {
         res = res.filter(i => i.stockInDate.includes(q));
-      } else if (searchMode === 'VENDOR') {
-        res = res.filter(i => i.vendorId === searchQueryVal || (vendors.find(v => v.id === i.vendorId)?.name.toLowerCase().includes(q)));
-      } else if (searchMode === 'DELIVERY') {
-        // Items don't strictly have delivery service, but match if applicable
+      } else if (invSearchMode === 'VENDOR') {
+        res = res.filter(i => i.vendorId === invSearchVal || (vendors.find(v => v.id === i.vendorId)?.name.toLowerCase().includes(q)));
       }
     }
     return res;
-  }, [items, currentUser, vendorFilter, searchMode, searchQueryVal, vendors]);
+  }, [items, currentUser, invSearchMode, invSearchVal, vendors]);
 
+  // Scoped Orders with Unified Search
   const scopedOrders = useMemo(() => {
     let res = orders;
     if (currentUser && currentUser.role === 'Vendor') {
       res = res.filter(o => o.vendorId === currentUser.vendorId);
-    } else if (vendorFilter !== 'ALL') {
-      res = res.filter(o => o.vendorId === vendorFilter);
     }
     if (deliveryFilter !== 'ALL') {
       res = res.filter(o => o.deliveryService === deliveryFilter);
     }
-    if (searchQueryVal.trim()) {
-      const q = searchQueryVal.toLowerCase();
-      if (searchMode === 'ID') {
+    if (orderSearchVal.trim()) {
+      const q = orderSearchVal.toLowerCase();
+      if (orderSearchMode === 'ID') {
         res = res.filter(o => o.id.toLowerCase().includes(q) || o.customerName.toLowerCase().includes(q) || o.customerPhone.toLowerCase().includes(q) || o.trackingNo.toLowerCase().includes(q));
-      } else if (searchMode === 'DATE') {
+      } else if (orderSearchMode === 'DATE') {
         res = res.filter(o => o.createdAt.toLowerCase().includes(q));
-      } else if (searchMode === 'VENDOR') {
-        res = res.filter(o => o.vendorId === searchQueryVal || (vendors.find(v => v.id === o.vendorId)?.name.toLowerCase().includes(q)));
-      } else if (searchMode === 'DELIVERY') {
+      } else if (orderSearchMode === 'VENDOR') {
+        res = res.filter(o => o.vendorId === orderSearchVal || (vendors.find(v => v.id === o.vendorId)?.name.toLowerCase().includes(q)));
+      } else if (orderSearchMode === 'DELIVERY') {
         res = res.filter(o => o.deliveryService.toLowerCase().includes(q));
       }
     }
     return res;
-  }, [orders, currentUser, vendorFilter, deliveryFilter, searchMode, searchQueryVal, vendors]);
+  }, [orders, currentUser, deliveryFilter, orderSearchMode, orderSearchVal, vendors]);
+
+  // Scoped Returns with Unified Search
+  const scopedReturns = useMemo(() => {
+    let res = returns;
+    if (currentUser && currentUser.role === 'Vendor') {
+      res = res.filter(r => r.vendorId === currentUser.vendorId);
+    }
+    if (retSearchVal.trim()) {
+      const q = retSearchVal.toLowerCase();
+      if (retSearchMode === 'ID') {
+        res = res.filter(r => r.id.toLowerCase().includes(q) || r.itemName.toLowerCase().includes(q) || (r.orderId && r.orderId.toLowerCase().includes(q)));
+      } else if (retSearchMode === 'DATE') {
+        res = res.filter(r => r.date.toLowerCase().includes(q));
+      } else if (retSearchMode === 'VENDOR') {
+        res = res.filter(r => r.vendorId === retSearchVal || (vendors.find(v => v.id === r.vendorId)?.name.toLowerCase().includes(q)));
+      } else if (retSearchMode === 'REASON') {
+        res = res.filter(r => r.reason.toLowerCase().includes(q));
+      }
+    }
+    return res;
+  }, [returns, currentUser, retSearchMode, retSearchVal, vendors]);
+
+  // Scoped Cash Ledger with Unified Search
+  const scopedCashLedger = useMemo(() => {
+    let res = cashLedger;
+    if (cashSearchVal.trim()) {
+      const q = cashSearchVal.toLowerCase();
+      if (cashSearchMode === 'ID') {
+        res = res.filter(c => c.id.toLowerCase().includes(q) || (c.referenceId && c.referenceId.toLowerCase().includes(q)) || (c.description && c.description.toLowerCase().includes(q)));
+      } else if (cashSearchMode === 'DATE') {
+        res = res.filter(c => c.date.toLowerCase().includes(q));
+      } else if (cashSearchMode === 'TYPE') {
+        res = res.filter(c => c.type.toLowerCase().includes(q));
+      }
+    }
+    return res;
+  }, [cashLedger, cashSearchMode, cashSearchVal]);
 
   function calculateStoreCharge(item, targetDate = new Date()) {
     const vendor = vendors.find(v => v.id === item.vendorId);
@@ -466,7 +513,6 @@ export default function App() {
     return Math.max(...chartData.map(d => Number(d[chartMetric.startsWith('del') ? 'qty' : chartMetric]) || 0), 1);
   }, [chartData, chartMetric]);
 
-  // Export as .xls (Microsoft Excel format compatible)
   const exportVendorStatement = (vendorId) => {
     const vendor = vendors.find(v => v.id === vendorId);
     if (!vendor) return;
@@ -588,13 +634,6 @@ export default function App() {
         role: newUser.role,
         vendorId: newUser.role === 'Vendor' ? newUser.vendorId : ''
       };
-      try {
-        await fetch(`${API_BASE_URL}/api/users/${editingUser.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(updatedUser)
-        });
-      } catch (e) {}
       setUsersList(usersList.map(u => u.id === editingUser.id ? updatedUser : u));
       addLog(`Updated user account: ${newUser.username}`);
     } else {
@@ -606,13 +645,6 @@ export default function App() {
         role: newUser.role,
         vendorId: newUser.role === 'Vendor' ? newUser.vendorId : ''
       };
-      try {
-        await fetch(`${API_BASE_URL}/api/users`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(userObj)
-        });
-      } catch (e) {}
       setUsersList([...usersList, userObj]);
       addLog(`Created new user account: ${userObj.username}`);
     }
@@ -623,9 +655,6 @@ export default function App() {
 
   const handleDeleteUser = async (userId) => {
     if (confirm('ဤ User အကောင့်ကို ဖျက်ရန် သေချာပါသလား?')) {
-      try {
-        await fetch(`${API_BASE_URL}/api/users/${userId}`, { method: 'DELETE' });
-      } catch (e) {}
       setUsersList(usersList.filter(u => u.id !== userId));
       addLog(`Deleted user ID ${userId}`);
     }
@@ -649,13 +678,6 @@ export default function App() {
         freeStorageDays: 7,
         dailyStoreFee: 200
       };
-      try {
-        await fetch(`${API_BASE_URL}/api/vendors`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(vendorObj)
-        });
-      } catch (e) {}
       setVendors([...vendors, vendorObj]);
       addLog(`Registered new vendor: ${vendorObj.name}`);
     }
@@ -682,13 +704,6 @@ export default function App() {
 
     if (editingDelivery) {
       const updatedObj = { ...editingDelivery, ...newDelivery };
-      try {
-        await fetch(`${API_BASE_URL}/api/deliveries/${editingDelivery.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(updatedObj)
-        });
-      } catch (e) {}
       setDeliveries(deliveries.map(d => d.id === editingDelivery.id ? updatedObj : d));
       addLog(`Updated delivery service: ${newDelivery.name}`);
       setEditingDelivery(null);
@@ -700,13 +715,6 @@ export default function App() {
         address: newDelivery.address,
         bankAccount: newDelivery.bankAccount
       };
-      try {
-        await fetch(`${API_BASE_URL}/api/deliveries`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(deliveryObj)
-        });
-      } catch (e) {}
       setDeliveries([...deliveries, deliveryObj]);
       addLog(`Registered new delivery service: ${deliveryObj.name}`);
     }
@@ -717,15 +725,36 @@ export default function App() {
   const handleDeleteDelivery = async (delId, delName) => {
     const hasOrders = orders.some(o => o.deliveryService === delName && !o.cancelled);
     if (hasOrders) {
-      alert('ဤ Delivery တွင် ဆက်စပ်အော်ဒါစာရင်းများ ရှိနေသေးသဖြင့် ဖျက်၍မရပါ သို့မဟုတ် Cancelled လုပ်ထားရန် လိုအပ်ပါသည်။');
+      alert('ဤ Delivery တွင် ဆက်စပ်အော်ဒါစာရင်းများ ရှိနေသေးသဖြင့် ဖျက်၍မရပါ။');
       return;
     }
     if (confirm(`Delivery "${delName}" ကို ဖျက်ရန် သေချာပါသလား?`)) {
-      try {
-        await fetch(`${API_BASE_URL}/api/deliveries/${delId}`, { method: 'DELETE' });
-      } catch (e) {}
       setDeliveries(deliveries.filter(d => d.id !== delId));
       addLog(`Deleted delivery service ID ${delId}`);
+    }
+  };
+
+  // Inventory Cancel Action (updates/restores state)
+  const handleCancelInventoryItem = (item) => {
+    if (confirm(`သတိပေးချက်: Stock item "${item.name}" ကို Cancel လုပ်၍ စာရင်းမှ ဖျက်ပစ်ပြီး သက်ဆိုင်ရာ လက်ကျန်ဒေတာများကို Update လုပ်မည် သေချာပါသလား?`)) {
+      setItems(items.filter(i => i.id !== item.id));
+      addLog(`Cancelled and removed inventory item ${item.name} (SKU: ${item.sku}) and updated related stock data`);
+    }
+  };
+
+  // Return Item Cancel Action (restores stock back to inventory)
+  const handleCancelReturnItem = (ret) => {
+    if (confirm(`Return record ${ret.id} ကို Cancel လုပ်မည် သေချာပါသလား? (ပစ္စည်းအရေအတွက် Stock သို့ ပြန်လည် Restore ဖြစ်မည်။)`)) {
+      if (ret.itemId) {
+        setItems(prev => prev.map(i => {
+          if (i.id === ret.itemId) {
+            return { ...i, quantity: (Number(i.quantity) || 0) + (Number(ret.qty) || 0) };
+          }
+          return i;
+        }));
+      }
+      setReturns(returns.filter(r => r.id !== ret.id));
+      addLog(`Cancelled return record ${ret.id} and successfully restored ${ret.qty} pcs of stock to inventory.`);
     }
   };
 
@@ -771,47 +800,23 @@ export default function App() {
       updatedBy: currentUser?.name || 'Staff'
     };
 
-    try {
-      await fetch(`${API_BASE_URL}/api/orders`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(createdOrder)
-      });
-      setOrders([createdOrder, ...orders]);
-
-      for (const ordered of newOrder.items) {
-        const targetItem = items.find(i => i.id === ordered.itemId);
-        if (targetItem) {
-          const newQty = Math.max(0, (Number(targetItem.quantity) || 0) - (Number(ordered.qty) || 1));
-          await fetch(`${API_BASE_URL}/api/items/${targetItem.id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ quantity: newQty })
-          });
-        }
+    setOrders([createdOrder, ...orders]);
+    for (const ordered of newOrder.items) {
+      const targetItem = items.find(i => i.id === ordered.itemId);
+      if (targetItem) {
+        const newQty = Math.max(0, (Number(targetItem.quantity) || 0) - (Number(ordered.qty) || 1));
+        setItems(prev => prev.map(i => i.id === targetItem.id ? { ...i, quantity: newQty } : i));
       }
-
-      setItems(prev => prev.map(item => {
-        const ordered = newOrder.items.find(i => i.itemId === item.id);
-        if (ordered) {
-          return { ...item, quantity: Math.max(0, (Number(item.quantity) || 0) - (Number(ordered.qty) || 1)) };
-        }
-        return item;
-      }));
-
-      addNotification('New Order Created', `Order ID ${createdOrder.id} has been created.`, 'order');
-      addLog(`Created new order ${createdOrder.id} for Vendor ${newOrder.vendorId}`);
-      setShowOrderModal(false);
-    } catch (err) {
-      setOrders([createdOrder, ...orders]);
-      setShowOrderModal(false);
     }
+
+    addNotification('New Order Created', `Order ID ${createdOrder.id} has been created.`, 'order');
+    addLog(`Created new order ${createdOrder.id} for Vendor ${newOrder.vendorId}`);
+    setShowOrderModal(false);
   };
 
   const handleUpdateOrderStatus = async (orderId, newStatus, newTracking) => {
     const targetOrder = orders.find(o => o.id === orderId);
     
-    // Finance Rule Check: If voucher has COD collected (COD_IN recorded), prevent changing status or editing
     if (codCollectedVoucherIds.has(orderId)) {
       alert('ဤ Voucher သည် COD Cash အဝင်စာရင်း (COD Flow) ပြီးစီးသွားပြီဖြစ်သဖြင့် Status ပြောင်းလဲ၍မရတော့ပါ။');
       return;
@@ -880,16 +885,7 @@ export default function App() {
             storeChargePerDay: stockItem.storeChargePerDay,
             freeDays: stockItem.freeDays
           };
-          try {
-            await fetch(`${API_BASE_URL}/api/items`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(newBatchItem)
-            });
-            setItems(prev => [newBatchItem, ...prev]);
-          } catch (e) {
-            setItems(prev => [{ ...newBatchItem }, ...prev]);
-          }
+          setItems(prev => [newBatchItem, ...prev]);
         }
       }
 
@@ -905,31 +901,11 @@ export default function App() {
         status: 'In Warehouse',
         date: new Date().toLocaleDateString()
       };
-      try {
-        await fetch(`${API_BASE_URL}/api/returns`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(newReturnObj)
-        });
-      } catch (e) {}
       setReturns(prev => [newReturnObj, ...prev]);
       addNotification('Delivery Return', `Order ${targetOrder.id} returned from delivery.`, 'return');
     }
 
-    try {
-      await fetch(`${API_BASE_URL}/api/orders/${orderId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedFields)
-      });
-    } catch (err) {}
-
-    setOrders(prev => prev.map(o => {
-      if (o.id === orderId) {
-        return { ...o, ...updatedFields };
-      }
-      return o;
-    }));
+    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, ...updatedFields } : o));
     addNotification('Order Updated', `Order ${orderId} status changed to ${newStatus}`, 'order');
     addLog(`Updated Order ${orderId} status to '${newStatus}'`);
   };
@@ -980,16 +956,7 @@ export default function App() {
             storeChargePerDay: stockItem.storeChargePerDay,
             freeDays: stockItem.freeDays
           };
-          try {
-            await fetch(`${API_BASE_URL}/api/items`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(newBatchItem)
-            });
-            setItems(prev => [newBatchItem, ...prev]);
-          } catch (e) {
-            setItems(prev => [newBatchItem, ...prev]);
-          }
+          setItems(prev => [newBatchItem, ...prev]);
         }
 
         const retObj = {
@@ -1004,13 +971,6 @@ export default function App() {
           status: 'In Warehouse',
           date: new Date().toLocaleDateString()
         };
-        try {
-          await fetch(`${API_BASE_URL}/api/returns`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(retObj)
-          });
-        } catch (e) {}
         setReturns(prev => [retObj, ...prev]);
       }
     }
@@ -1025,14 +985,6 @@ export default function App() {
       codCollected: true,
       updatedBy: currentUser?.name || 'Staff'
     };
-
-    try {
-      await fetch(`${API_BASE_URL}/api/orders/${targetPartialOrder.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedFields)
-      });
-    } catch (e) {}
 
     setOrders(prev => prev.map(o => o.id === targetPartialOrder.id ? { ...o, ...updatedFields } : o));
     addLog(`Processed Partial Return for Order ${targetPartialOrder.id}`);
@@ -1056,15 +1008,9 @@ export default function App() {
     }
 
     if (confirm(`သတိပေးချက်: Cancelled Voucher ${orderId} ကို စနစ်ထဲမှ အပြီးတိုင် ဖျက်ပစ်ရန် သေချာပါသလား?`)) {
-      try {
-        await fetch(`${API_BASE_URL}/api/orders/${orderId}`, { method: 'DELETE' });
-        setOrders(prev => prev.filter(o => o.id !== orderId));
-        setSelectedOrderIds(prev => prev.filter(id => id !== orderId));
-        addLog(`Admin deleted Voucher ${orderId}`);
-      } catch (err) {
-        setOrders(prev => prev.filter(o => o.id !== orderId));
-        setSelectedOrderIds(prev => prev.filter(id => id !== orderId));
-      }
+      setOrders(prev => prev.filter(o => o.id !== orderId));
+      setSelectedOrderIds(prev => prev.filter(id => id !== orderId));
+      addLog(`Admin deleted Voucher ${orderId}`);
     }
   };
 
@@ -1380,40 +1326,15 @@ export default function App() {
                     </div>
 
                     <div className="flex items-center border border-slate-300 rounded-lg bg-slate-50 p-0.5 space-x-1">
-                      <button 
-                        onClick={() => setChartType('line')} 
-                        title="Area / Line Chart"
-                        className={`p-1.5 rounded ${chartType === 'line' ? 'bg-white shadow text-indigo-600 font-bold' : 'text-slate-500'}`}
-                      >
-                        <TrendingUp className="w-4 h-4" />
-                      </button>
-                      <button 
-                        onClick={() => setChartType('bar')} 
-                        title="Bar Chart"
-                        className={`p-1.5 rounded ${chartType === 'bar' ? 'bg-white shadow text-indigo-600 font-bold' : 'text-slate-500'}`}
-                      >
-                        <BarChart2 className="w-4 h-4" />
-                      </button>
-                      <button 
-                        onClick={() => setChartType('pie')} 
-                        title="Pie Chart Share"
-                        className={`p-1.5 rounded ${chartType === 'pie' ? 'bg-white shadow text-indigo-600 font-bold' : 'text-slate-500'}`}
-                      >
-                        <PieChart className="w-4 h-4" />
-                      </button>
-                      <button 
-                        onClick={() => setChartType('table')} 
-                        title="Pivot Table View"
-                        className={`p-1.5 rounded ${chartType === 'table' ? 'bg-white shadow text-indigo-600 font-bold' : 'text-slate-500'}`}
-                      >
-                        <Table className="w-4 h-4" />
-                      </button>
+                      <button onClick={() => setChartType('line')} className={`p-1.5 rounded ${chartType === 'line' ? 'bg-white shadow text-indigo-600 font-bold' : 'text-slate-500'}`}><TrendingUp className="w-4 h-4" /></button>
+                      <button onClick={() => setChartType('bar')} className={`p-1.5 rounded ${chartType === 'bar' ? 'bg-white shadow text-indigo-600 font-bold' : 'text-slate-500'}`}><BarChart2 className="w-4 h-4" /></button>
+                      <button onClick={() => setChartType('pie')} className={`p-1.5 rounded ${chartType === 'pie' ? 'bg-white shadow text-indigo-600 font-bold' : 'text-slate-500'}`}><PieChart className="w-4 h-4" /></button>
+                      <button onClick={() => setChartType('table')} className={`p-1.5 rounded ${chartType === 'table' ? 'bg-white shadow text-indigo-600 font-bold' : 'text-slate-500'}`}><Table className="w-4 h-4" /></button>
                     </div>
 
                     <button 
                       onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
                       className="p-1.5 border border-slate-300 rounded-lg bg-slate-50 text-slate-600 hover:bg-slate-100 flex items-center space-x-1 text-xs"
-                      title="Sort Order"
                     >
                       <ArrowUpDown className="w-3.5 h-3.5" />
                       <span className="uppercase text-[10px] font-bold">{sortOrder}</span>
@@ -1445,37 +1366,13 @@ export default function App() {
 
                   {chartType === 'line' && (
                     <div className="h-44 w-full flex items-end justify-between gap-4 border-b border-indigo-100 pb-2 relative">
-                      <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
-                        <path
-                          d={`M ${chartData.map((d, i) => {
-                            const val = chartMetric.startsWith('del') ? d.qty : (d[chartMetric] || 0);
-                            const x = (i / (chartData.length - 1 || 1)) * 100;
-                            const y = 100 - ((val / maxChartValue) * 80);
-                            return `${i === 0 ? '' : 'L '} ${x} ${y}`;
-                          }).join(' ')}`}
-                          fill="none"
-                          stroke="#6366f1"
-                          strokeWidth="2.5"
-                          vectorEffect="non-scaling-stroke"
-                        />
-                      </svg>
                       {chartData.map((d) => {
                         const val = chartMetric.startsWith('del') ? d.qty : (d[chartMetric] || 0);
                         const heightPct = Math.max(15, (val / maxChartValue) * 100);
                         return (
-                          <div 
-                            key={d.id} 
-                            onMouseEnter={() => setHoveredPoint(d)}
-                            onMouseLeave={() => setHoveredPoint(null)}
-                            className="flex-1 flex flex-col items-center group cursor-pointer z-10"
-                          >
-                            <div className="text-[10px] font-bold text-indigo-600 mb-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                              {(val || 0).toLocaleString()}
-                            </div>
-                            <div 
-                              className="w-3.5 h-3.5 bg-indigo-600 rounded-full border-2 border-white shadow-md group-hover:scale-150 transition-transform"
-                              style={{ marginBottom: `${heightPct * 1.2}px` }}
-                            ></div>
+                          <div key={d.id} onMouseEnter={() => setHoveredPoint(d)} onMouseLeave={() => setHoveredPoint(null)} className="flex-1 flex flex-col items-center group cursor-pointer z-10">
+                            <div className="text-[10px] font-bold text-indigo-600 mb-1 opacity-0 group-hover:opacity-100 transition-opacity">{(val || 0).toLocaleString()}</div>
+                            <div className="w-3.5 h-3.5 bg-indigo-600 rounded-full border-2 border-white shadow-md group-hover:scale-150 transition-transform" style={{ marginBottom: `${heightPct * 1.2}px` }}></div>
                             <span className="text-xs font-semibold text-slate-600 truncate max-w-[100px]">{d.name}</span>
                           </div>
                         );
@@ -1489,17 +1386,9 @@ export default function App() {
                         const val = chartMetric.startsWith('del') ? d.qty : (d[chartMetric] || 0);
                         const heightPct = Math.max(10, (val / maxChartValue) * 100);
                         return (
-                          <div 
-                            key={d.id}
-                            onMouseEnter={() => setHoveredPoint(d)}
-                            onMouseLeave={() => setHoveredPoint(null)}
-                            className="flex-1 h-full flex flex-col items-center justify-end group cursor-pointer"
-                          >
+                          <div key={d.id} onMouseEnter={() => setHoveredPoint(d)} onMouseLeave={() => setHoveredPoint(null)} className="flex-1 h-full flex flex-col items-center justify-end group cursor-pointer">
                             <span className="text-[10px] font-bold text-indigo-600 mb-1">{(val || 0).toLocaleString()}</span>
-                            <div 
-                              className="w-full max-w-[60px] bg-indigo-500 group-hover:bg-indigo-600 rounded-t-lg transition-all shadow-md"
-                              style={{ height: `${heightPct}%`, minHeight: '8px' }}
-                            ></div>
+                            <div className="w-full max-w-[60px] bg-indigo-500 group-hover:bg-indigo-600 rounded-t-lg transition-all shadow-md" style={{ height: `${heightPct}%`, minHeight: '8px' }}></div>
                             <span className="text-xs font-semibold text-slate-600 mt-2 truncate max-w-[100px]">{d.name}</span>
                           </div>
                         );
@@ -1514,13 +1403,8 @@ export default function App() {
                         const pct = Math.round((val / maxChartValue) * 100);
                         return (
                           <div key={d.id} className="space-y-1">
-                            <div className="flex justify-between text-xs font-medium">
-                              <span>{d.name}</span>
-                              <span className="font-bold text-indigo-600">{(val || 0).toLocaleString()} ({pct}%)</span>
-                            </div>
-                            <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                              <div className="bg-indigo-600 h-full rounded-full transition-all duration-500" style={{ width: `${pct}%` }}></div>
-                            </div>
+                            <div className="flex justify-between text-xs font-medium"><span>{d.name}</span><span className="font-bold text-indigo-600">{(val || 0).toLocaleString()} ({pct}%)</span></div>
+                            <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden"><div className="bg-indigo-600 h-full rounded-full transition-all duration-500" style={{ width: `${pct}%` }}></div></div>
                           </div>
                         );
                       })}
@@ -1531,12 +1415,7 @@ export default function App() {
                     <div className="overflow-x-auto border rounded-lg">
                       <table className="w-full text-xs text-left">
                         <thead className="bg-slate-100 text-slate-700 font-bold border-b">
-                          <tr>
-                            <th className="p-2.5">{chartMetric.startsWith('del') ? 'Delivery Service Name' : 'Vendor Name'}</th>
-                            <th className="p-2.5">{chartMetric === 'del_orders' ? 'Total Waybills' : chartMetric === 'del_success' ? 'Success Rate (%)' : 'Stock Quantity'}</th>
-                            <th className="p-2.5">{chartMetric.startsWith('del') ? 'Delivered Qty' : 'Total Selling Value'}</th>
-                            <th className="p-2.5">{chartMetric.startsWith('del') ? 'Return Rate (%)' : 'Overdue Store Charges'}</th>
-                          </tr>
+                          <tr><th className="p-2.5">{chartMetric.startsWith('del') ? 'Delivery Service Name' : 'Vendor Name'}</th><th className="p-2.5">{chartMetric === 'del_orders' ? 'Total Waybills' : chartMetric === 'del_success' ? 'Success Rate (%)' : 'Stock Quantity'}</th><th className="p-2.5">{chartMetric.startsWith('del') ? 'Delivered Qty' : 'Total Selling Value'}</th><th className="p-2.5">{chartMetric.startsWith('del') ? 'Return Rate (%)' : 'Overdue Store Charges'}</th></tr>
                         </thead>
                         <tbody className="divide-y">
                           {chartData.map(d => (
@@ -1551,114 +1430,35 @@ export default function App() {
                       </table>
                     </div>
                   )}
-
                 </div>
               </div>
             )}
-
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              
-              {currentUser.role !== 'Vendor' && (
-                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
-                  <h3 className="font-bold text-slate-800 border-b pb-2 text-sm flex items-center">
-                    <Plus className="w-4 h-4 mr-2 text-indigo-600" />
-                    Quick Operations
-                  </h3>
-                  <div className="space-y-2">
-                    <button 
-                      onClick={() => { setActiveTab('orders'); setShowOrderModal(true); }}
-                      className="w-full text-left px-4 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-semibold flex items-center justify-between transition-colors"
-                    >
-                      <span>Create New Order & Voucher</span>
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                    <button 
-                      onClick={() => { setActiveTab('inventory'); setShowItemModal(true); }}
-                      className="w-full text-left px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center justify-between transition-colors"
-                    >
-                      <span>Add Stock / Item for Vendor</span>
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                    <button 
-                      onClick={() => setActiveTab('cash_ledger')}
-                      className="w-full text-left px-4 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-xs font-semibold flex items-center justify-between transition-colors"
-                    >
-                      <span>Cash Management & Payout</span>
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              <div className={`${currentUser.role === 'Vendor' ? 'lg:col-span-3' : 'lg:col-span-2'} bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4`}>
-                <div className="flex justify-between items-center border-b pb-2">
-                  <h3 className="font-bold text-slate-800 text-sm flex items-center">
-                    <Truck className="w-4 h-4 mr-2 text-indigo-600" />
-                    Active Waybills & Tracking Status
-                  </h3>
-                  <button onClick={() => setActiveTab('orders')} className="text-xs text-indigo-600 hover:underline">View All</button>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs text-slate-600">
-                    <thead className="bg-slate-50 text-slate-500 font-semibold border-b">
-                      <tr>
-                        <th className="p-2">Order ID</th>
-                        <th className="p-2">Customer</th>
-                        <th className="p-2">Delivery Service</th>
-                        <th className="p-2">Tracking Status</th>
-                        <th className="p-2">COD Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {scopedOrders.slice(0, 5).map(ord => (
-                        <tr key={ord.id} className="hover:bg-slate-50">
-                          <td className="p-2 font-bold text-indigo-600">{ord.id}</td>
-                          <td className="p-2">{ord.customerName}</td>
-                          <td className="p-2">{ord.deliveryService}</td>
-                          <td className="p-2">
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                              ord.status === 'Delivered' ? 'bg-emerald-100 text-emerald-700' :
-                              ord.status === 'In-Transit' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
-                            }`}>
-                              {ord.status}
-                            </span>
-                          </td>
-                          <td className="p-2 font-semibold">{(Number(ord.totalCod) || 0).toLocaleString()} Ks</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-            </div>
           </div>
         )}
 
+        {/* ORDERS & VOUCHERS TAB */}
         {activeTab === 'orders' && (
           <div className="space-y-4">
             
-            {/* Unified Search By Widget */}
+            {/* Unified Search By Widget for Orders */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
               <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-                
                 <div className="relative">
                   <button 
-                    onClick={() => setShowSearchDropdown(!showSearchDropdown)}
+                    onClick={() => setShowOrderSearchDropdown(!showOrderSearchDropdown)}
                     className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs px-3 py-2 rounded-lg border border-slate-300 flex items-center space-x-1"
                   >
-                    <span>Search by: <strong className="text-indigo-600">{searchMode}</strong></span>
+                    <span>Search by: <strong className="text-indigo-600">{orderSearchMode}</strong></span>
                     <ChevronRight className="w-3.5 h-3.5 ml-1" />
                   </button>
 
-                  {showSearchDropdown && (
+                  {showOrderSearchDropdown && (
                     <div className="absolute left-0 mt-1 w-44 bg-white border border-slate-200 rounded-lg shadow-xl z-20 text-xs py-1">
                       {['ID', 'DATE', 'VENDOR', 'DELIVERY'].map(mode => (
                         <button
                           key={mode}
-                          onClick={() => { setSearchMode(mode); setSearchQueryVal(''); setShowSearchDropdown(false); }}
-                          className={`w-full text-left px-3 py-2 hover:bg-indigo-50 font-medium ${searchMode === mode ? 'text-indigo-600 font-bold bg-indigo-50/50' : 'text-slate-700'}`}
+                          onClick={() => { setOrderSearchMode(mode); setOrderSearchVal(''); setShowOrderSearchDropdown(false); }}
+                          className={`w-full text-left px-3 py-2 hover:bg-indigo-50 font-medium ${orderSearchMode === mode ? 'text-indigo-600 font-bold bg-indigo-50/50' : 'text-slate-700'}`}
                         >
                           {mode === 'ID' ? 'ID / Customer / Phone' : mode === 'DATE' ? 'Date' : mode === 'VENDOR' ? 'Vendor Name' : 'Delivery Service'}
                         </button>
@@ -1667,33 +1467,30 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Conditional Input based on searchMode */}
-                {searchMode === 'ID' && (
+                {orderSearchMode === 'ID' && (
                   <div className="relative w-full sm:w-64">
                     <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
                     <input 
-                      type="text"
-                      placeholder="Type ID, Phone, Name..."
-                      value={searchQueryVal}
-                      onChange={(e) => setSearchQueryVal(e.target.value)}
+                      type="text" placeholder="Type ID, Phone, Name..."
+                      value={orderSearchVal}
+                      onChange={(e) => setOrderSearchVal(e.target.value)}
                       className="w-full pl-9 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
                 )}
 
-                {searchMode === 'DATE' && (
+                {orderSearchMode === 'DATE' && (
                   <input 
-                    type="date"
-                    value={searchQueryVal}
-                    onChange={(e) => setSearchQueryVal(e.target.value)}
+                    type="date" value={orderSearchVal}
+                    onChange={(e) => setOrderSearchVal(e.target.value)}
                     className="border border-slate-300 rounded-lg text-xs px-3 py-1.5 bg-white"
                   />
                 )}
 
-                {searchMode === 'VENDOR' && (
+                {orderSearchMode === 'VENDOR' && (
                   <select 
-                    value={searchQueryVal}
-                    onChange={(e) => setSearchQueryVal(e.target.value)}
+                    value={orderSearchVal}
+                    onChange={(e) => setOrderSearchVal(e.target.value)}
                     className="border border-slate-300 rounded-lg text-xs px-3 py-1.5 bg-white font-medium"
                   >
                     <option value="">-- Select Vendor --</option>
@@ -1701,25 +1498,14 @@ export default function App() {
                   </select>
                 )}
 
-                {searchMode === 'DELIVERY' && (
+                {orderSearchMode === 'DELIVERY' && (
                   <select 
-                    value={searchQueryVal}
-                    onChange={(e) => setSearchQueryVal(e.target.value)}
+                    value={orderSearchVal}
+                    onChange={(e) => setOrderSearchVal(e.target.value)}
                     className="border border-slate-300 rounded-lg text-xs px-3 py-1.5 bg-white font-medium"
                   >
                     <option value="">-- Select Delivery --</option>
                     {deliveries.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
-                  </select>
-                )}
-
-                {currentUser.role !== 'Vendor' && (
-                  <select 
-                    value={vendorFilter} 
-                    onChange={(e) => setVendorFilter(e.target.value)}
-                    className="border border-slate-300 rounded-lg text-xs px-3 py-1.5 bg-white font-medium"
-                  >
-                    <option value="ALL">All Vendors Filter</option>
-                    {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
                   </select>
                 )}
               </div>
@@ -1750,19 +1536,7 @@ export default function App() {
                 <table className="w-full text-left text-xs">
                   <thead className="bg-slate-100 text-slate-600 font-semibold border-b">
                     <tr>
-                      <th className="p-3 w-10 text-center">
-                        <input 
-                          type="checkbox"
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedOrderIds(scopedOrders.map(o => o.id));
-                            } else {
-                              setSelectedOrderIds([]);
-                            }
-                          }}
-                          checked={selectedOrderIds.length > 0 && selectedOrderIds.length === scopedOrders.length}
-                        />
-                      </th>
+                      <th className="p-3 w-10 text-center"><input type="checkbox" onChange={(e) => setSelectedOrderIds(e.target.checked ? scopedOrders.map(o => o.id) : [])} checked={selectedOrderIds.length > 0 && selectedOrderIds.length === scopedOrders.length} /></th>
                       <th className="p-3">Order ID</th>
                       <th className="p-3">Vendor</th>
                       <th className="p-3">Customer Info</th>
@@ -1781,47 +1555,22 @@ export default function App() {
 
                       return (
                         <tr key={order.id} className={`hover:bg-slate-50 ${order.cancelled ? 'bg-rose-50/50 opacity-80' : ''}`}>
-                          <td className="p-3 text-center">
-                            <input 
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setSelectedOrderIds([...selectedOrderIds, order.id]);
-                                } else {
-                                  setSelectedOrderIds(selectedOrderIds.filter(id => id !== order.id));
-                                }
-                              }}
-                            />
-                          </td>
+                          <td className="p-3 text-center"><input type="checkbox" checked={isSelected} onChange={(e) => setSelectedOrderIds(e.target.checked ? [...selectedOrderIds, order.id] : selectedOrderIds.filter(id => id !== order.id))} /></td>
                           <td className="p-3 font-bold text-indigo-600">
                             {order.id}
                             {isCodDone && <span className="ml-1 text-[9px] bg-emerald-100 text-emerald-700 px-1 rounded font-semibold">COD Flow Done</span>}
                             <div className="text-[10px] text-slate-400 font-normal">{order.createdAt}</div>
                           </td>
                           <td className="p-3 font-medium text-slate-700">{vendor ? vendor.name : order.vendorId}</td>
-                          <td className="p-3">
-                            <p className="font-semibold text-slate-800">{order.customerName}</p>
-                            <p className="text-slate-500">{order.customerPhone}</p>
-                          </td>
-                          <td className="p-3">
-                            <p className="font-semibold text-slate-700">{order.deliveryService}</p>
-                            <p className="text-slate-400 font-mono text-[10px]">Trk: {order.trackingNo}</p>
-                          </td>
-                          <td className="p-3 font-bold text-slate-800">
-                            {(Number(order.totalCod) || 0).toLocaleString()} Ks
-                          </td>
+                          <td className="p-3"><p className="font-semibold text-slate-800">{order.customerName}</p><p className="text-slate-500">{order.customerPhone}</p></td>
+                          <td className="p-3"><p className="font-semibold text-slate-700">{order.deliveryService}</p><p className="text-slate-400 font-mono text-[10px]">Trk: {order.trackingNo}</p></td>
+                          <td className="p-3 font-bold text-slate-800">{(Number(order.totalCod) || 0).toLocaleString()} Ks</td>
                           <td className="p-3">
                             <select 
                               disabled={isLocked}
                               value={order.status}
                               onChange={(e) => handleUpdateOrderStatus(order.id, e.target.value)}
-                              className={`text-xs font-semibold px-2 py-1 rounded border ${
-                                order.cancelled ? 'bg-rose-100 text-rose-700 border-rose-200' :
-                                order.status === 'Delivered' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                                order.status === 'Partial Return' ? 'bg-purple-50 text-purple-700 border-purple-200' :
-                                'bg-amber-50 text-amber-700 border-amber-200'
-                              } ${isLocked ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'}`}
+                              className={`text-xs font-semibold px-2 py-1 rounded border ${order.cancelled ? 'bg-rose-100 text-rose-700 border-rose-200' : order.status === 'Delivered' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : order.status === 'Partial Return' ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-amber-50 text-amber-700 border-amber-200'} ${isLocked ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'}`}
                             >
                               <option value="Pending">Pending</option>
                               <option value="In-Transit">In-Transit</option>
@@ -1832,23 +1581,12 @@ export default function App() {
                             </select>
                           </td>
                           <td className="p-3 text-right space-x-1.5 whitespace-nowrap">
-                            <button 
-                              onClick={() => { setSelectedOrder(order); setShowVoucherModal(true); }}
-                              className="bg-slate-100 hover:bg-slate-200 text-slate-700 p-1.5 rounded text-[11px] font-semibold inline-flex items-center space-x-1"
-                              title="Print / View Voucher"
-                            >
-                              <Printer className="w-3.5 h-3.5" />
-                              <span>Voucher</span>
+                            <button onClick={() => { setSelectedOrder(order); setShowVoucherModal(true); }} className="bg-slate-100 hover:bg-slate-200 text-slate-700 p-1.5 rounded text-[11px] font-semibold inline-flex items-center space-x-1">
+                              <Printer className="w-3.5 h-3.5" /><span>Voucher</span>
                             </button>
-
                             {currentUser.role === 'Admin' && order.cancelled && !isCodDone && (
-                              <button 
-                                onClick={() => handleDeleteVoucher(order.id)}
-                                className="bg-rose-50 hover:bg-rose-100 text-rose-700 p-1.5 rounded text-[11px] font-semibold inline-flex items-center space-x-1"
-                                title="Delete Permanent (Cancelled Only)"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                                <span>Delete</span>
+                              <button onClick={() => handleDeleteVoucher(order.id)} className="bg-rose-50 hover:bg-rose-100 text-rose-700 p-1.5 rounded text-[11px] font-semibold inline-flex items-center space-x-1">
+                                <Trash2 className="w-3.5 h-3.5" /><span>Delete</span>
                               </button>
                             )}
                           </td>
@@ -1862,29 +1600,64 @@ export default function App() {
           </div>
         )}
 
+        {/* VENDOR INVENTORY TAB */}
         {activeTab === 'inventory' && (
           <div className="space-y-4">
             
+            {/* Unified Search By Widget for Inventory */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
               <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-                <div className="relative w-full sm:w-64">
-                  <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-                  <input 
-                    type="text"
-                    placeholder="Search SKU, Item name, Category..."
-                    value={searchQueryVal}
-                    onChange={(e) => setSearchQueryVal(e.target.value)}
-                    className="w-full pl-9 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
+                <div className="relative">
+                  <button 
+                    onClick={() => setShowInvSearchDropdown(!showInvSearchDropdown)}
+                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs px-3 py-2 rounded-lg border border-slate-300 flex items-center space-x-1"
+                  >
+                    <span>Search by: <strong className="text-indigo-600">{invSearchMode}</strong></span>
+                    <ChevronRight className="w-3.5 h-3.5 ml-1" />
+                  </button>
+
+                  {showInvSearchDropdown && (
+                    <div className="absolute left-0 mt-1 w-44 bg-white border border-slate-200 rounded-lg shadow-xl z-20 text-xs py-1">
+                      {['ID', 'DATE', 'VENDOR'].map(mode => (
+                        <button
+                          key={mode}
+                          onClick={() => { setInvSearchMode(mode); setInvSearchVal(''); setShowInvSearchDropdown(false); }}
+                          className={`w-full text-left px-3 py-2 hover:bg-indigo-50 font-medium ${invSearchMode === mode ? 'text-indigo-600 font-bold bg-indigo-50/50' : 'text-slate-700'}`}
+                        >
+                          {mode === 'ID' ? 'SKU / Item Name' : mode === 'DATE' ? 'Stock-In Date' : 'Vendor Name'}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
-                {currentUser.role !== 'Vendor' && (
+                {invSearchMode === 'ID' && (
+                  <div className="relative w-full sm:w-64">
+                    <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+                    <input 
+                      type="text" placeholder="Search SKU, Item name..."
+                      value={invSearchVal}
+                      onChange={(e) => setInvSearchVal(e.target.value)}
+                      className="w-full pl-9 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                )}
+
+                {invSearchMode === 'DATE' && (
+                  <input 
+                    type="date" value={invSearchVal}
+                    onChange={(e) => setInvSearchVal(e.target.value)}
+                    className="border border-slate-300 rounded-lg text-xs px-3 py-1.5 bg-white"
+                  />
+                )}
+
+                {invSearchMode === 'VENDOR' && (
                   <select 
-                    value={vendorFilter} 
-                    onChange={(e) => setVendorFilter(e.target.value)}
+                    value={invSearchVal}
+                    onChange={(e) => setInvSearchVal(e.target.value)}
                     className="border border-slate-300 rounded-lg text-xs px-3 py-1.5 bg-white font-medium"
                   >
-                    <option value="ALL">All Vendors</option>
+                    <option value="">-- Select Vendor --</option>
                     {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
                   </select>
                 )}
@@ -1920,26 +1693,14 @@ export default function App() {
                 <table className="w-full text-left text-xs">
                   <thead className="bg-slate-100 text-slate-600 font-semibold border-b">
                     <tr>
-                      <th className="p-3 w-10 text-center">
-                        <input 
-                          type="checkbox"
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedItemIds(scopedItems.map(i => i.id));
-                            } else {
-                              setSelectedItemIds([]);
-                            }
-                          }}
-                          checked={selectedItemIds.length > 0 && selectedItemIds.length === scopedItems.length}
-                        />
-                      </th>
+                      <th className="p-3 w-10 text-center"><input type="checkbox" onChange={(e) => setSelectedItemIds(e.target.checked ? scopedItems.map(i => i.id) : [])} checked={selectedItemIds.length > 0 && selectedItemIds.length === scopedItems.length} /></th>
                       <th className="p-3">SKU / Item</th>
                       <th className="p-3">Vendor</th>
                       <th className="p-3">Selling Price</th>
                       <th className="p-3">In-Stock Qty</th>
                       <th className="p-3">Stock-In Date</th>
                       <th className="p-3">Store Charges (Est.)</th>
-                      <th className="p-3 text-right">Actions (Today Only)</th>
+                      <th className="p-3 text-right">Actions (Return / Edit / Cancel)</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -1952,78 +1713,70 @@ export default function App() {
 
                       return (
                         <tr key={item.id} className="hover:bg-slate-50">
-                          <td className="p-3 text-center">
-                            <input 
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setSelectedItemIds([...selectedItemIds, item.id]);
-                                } else {
-                                  setSelectedItemIds(selectedItemIds.filter(id => id !== item.id));
-                                }
-                              }}
-                            />
-                          </td>
+                          <td className="p-3 text-center"><input type="checkbox" checked={isSelected} onChange={(e) => setSelectedItemIds(e.target.checked ? [...selectedItemIds, item.id] : selectedItemIds.filter(id => id !== item.id))} /></td>
                           <td className="p-3">
                             <p className="font-bold text-slate-800">{item.name}</p>
                             <p className="text-[10px] text-slate-400 font-mono">{item.sku}</p>
                           </td>
                           <td className="p-3 text-slate-600 font-medium">{vendor ? vendor.name : item.vendorId}</td>
+                          <td className="p-3"><p className="font-semibold text-slate-800">{(Number(item.price) || 0).toLocaleString()} Ks</p></td>
                           <td className="p-3">
-                            <p className="font-semibold text-slate-800">{(Number(item.price) || 0).toLocaleString()} Ks</p>
-                          </td>
-                          <td className="p-3">
-                            <span className={`px-2 py-0.5 rounded font-bold ${
-                              (Number(item.quantity) || 0) < 5 ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-800'
-                            }`}>
+                            <span className={`px-2 py-0.5 rounded font-bold ${(Number(item.quantity) || 0) < 5 ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-800'}`}>
                               {item.quantity} pcs
                             </span>
                           </td>
                           <td className="p-3 text-slate-500 font-mono text-[11px]">{item.stockInDate}</td>
                           <td className="p-3">
                             {storeCharge > 0 ? (
-                              <span className="text-amber-600 font-bold flex items-center">
-                                <Clock className="w-3 h-3 mr-1" />
-                                {storeCharge.toLocaleString()} Ks
-                              </span>
+                              <span className="text-amber-600 font-bold flex items-center"><Clock className="w-3 h-3 mr-1" />{storeCharge.toLocaleString()} Ks</span>
                             ) : (
                               <span className="text-emerald-600 text-[11px]">Free Period</span>
                             )}
                           </td>
-                          <td className="p-3 text-right space-x-2">
-                            {currentUser.role !== 'Vendor' && isTodayBatch ? (
-                              <>
-                                <button 
-                                  onClick={() => {
-                                    const newQtyStr = prompt(`Edit Qty for ${item.name}:`, item.quantity);
-                                    if (newQtyStr !== null) {
-                                      const nQ = Number(newQtyStr);
-                                      if (!isNaN(nQ)) {
-                                        setItems(items.map(i => i.id === item.id ? { ...i, quantity: nQ } : i));
-                                        addLog(`Edited stock quantity for ${item.name} to ${nQ}`);
-                                      }
-                                    }
-                                  }}
-                                  className="text-xs text-indigo-600 hover:underline font-semibold"
-                                >
-                                  Edit
-                                </button>
-                                <button 
-                                  onClick={() => {
-                                    if (confirm(`သတိပေးချက်: Stock item "${item.name}" ကို Cancel လုပ်၍ ဖျက်ပစ်ရန် သေချာပါသလား?`)) {
-                                      setItems(items.filter(i => i.id !== item.id));
-                                      addLog(`Cancelled and removed stock item ${item.name}`);
-                                    }
-                                  }}
-                                  className="text-xs text-rose-600 hover:underline font-semibold"
-                                >
-                                  Cancel
-                                </button>
-                              </>
-                            ) : currentUser.role !== 'Vendor' ? (
-                              <span className="text-[10px] text-slate-400">Locked (Past Date)</span>
-                            ) : null}
+                          <td className="p-3 text-right space-x-2 whitespace-nowrap">
+                            {/* Return Stock Button */}
+                            <button 
+                              onClick={() => { setTargetReturnItem(item); setReturnForm({ qty: 1, reason: 'Overstock Return' }); setShowReturnModal(true); }}
+                              className="text-xs text-amber-600 hover:underline font-semibold"
+                            >
+                              Return Stock
+                            </button>
+
+                            {/* Edit Button (Only Today's stock-in date, full editing form) */}
+                            {currentUser.role !== 'Vendor' && isTodayBatch && (
+                              <button 
+                                onClick={() => {
+                                  setEditingInventoryItem(item);
+                                  setEditInventoryForm({
+                                    name: item.name,
+                                    category: item.category || 'General',
+                                    price: item.price,
+                                    quantity: item.quantity,
+                                    handlingFee: item.handlingFee || 500,
+                                    storeChargePerDay: item.storeChargePerDay || 30,
+                                    freeDays: item.freeDays || 7
+                                  });
+                                  setShowEditItemModal(true);
+                                }}
+                                className="text-xs text-indigo-600 hover:underline font-semibold"
+                              >
+                                Edit
+                              </button>
+                            )}
+
+                            {/* Cancel Button (Available for today's batches) */}
+                            {currentUser.role !== 'Vendor' && isTodayBatch && (
+                              <button 
+                                onClick={() => handleCancelInventoryItem(item)}
+                                className="text-xs text-rose-600 hover:underline font-semibold"
+                              >
+                                Cancel
+                              </button>
+                            )}
+
+                            {currentUser.role !== 'Vendor' && !isTodayBatch && (
+                              <span className="text-[10px] text-slate-400">Edit/Cancel Locked (Past Date)</span>
+                            )}
                           </td>
                         </tr>
                       );
@@ -2035,24 +1788,81 @@ export default function App() {
           </div>
         )}
 
+        {/* RETURNS & DAMAGE TAB */}
         {activeTab === 'returns' && (
           <div className="space-y-4">
-            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-              <div className="flex items-center space-x-2 w-full sm:w-auto">
-                <div className="relative w-full sm:w-64">
-                  <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-                  <input 
-                    type="text"
-                    placeholder="Search ID, Item, Reason..."
-                    value={searchQueryVal}
-                    onChange={(e) => setSearchQueryVal(e.target.value)}
-                    className="w-full pl-9 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
+            
+            {/* Unified Search By Widget for Returns */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                <div className="relative">
+                  <button 
+                    onClick={() => setShowRetSearchDropdown(!showRetSearchDropdown)}
+                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs px-3 py-2 rounded-lg border border-slate-300 flex items-center space-x-1"
+                  >
+                    <span>Search by: <strong className="text-indigo-600">{retSearchMode}</strong></span>
+                    <ChevronRight className="w-3.5 h-3.5 ml-1" />
+                  </button>
+
+                  {showRetSearchDropdown && (
+                    <div className="absolute left-0 mt-1 w-44 bg-white border border-slate-200 rounded-lg shadow-xl z-20 text-xs py-1">
+                      {['ID', 'DATE', 'VENDOR', 'REASON'].map(mode => (
+                        <button
+                          key={mode}
+                          onClick={() => { setRetSearchMode(mode); setRetSearchVal(''); setShowRetSearchDropdown(false); }}
+                          className={`w-full text-left px-3 py-2 hover:bg-indigo-50 font-medium ${retSearchMode === mode ? 'text-indigo-600 font-bold bg-indigo-50/50' : 'text-slate-700'}`}
+                        >
+                          {mode === 'ID' ? 'Return ID / Item' : mode === 'DATE' ? 'Date' : mode === 'VENDOR' ? 'Vendor Name' : 'Reason'}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
+
+                {retSearchMode === 'ID' && (
+                  <div className="relative w-full sm:w-64">
+                    <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+                    <input 
+                      type="text" placeholder="Search Return ID, Item name..."
+                      value={retSearchVal}
+                      onChange={(e) => setRetSearchVal(e.target.value)}
+                      className="w-full pl-9 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                )}
+
+                {retSearchMode === 'DATE' && (
+                  <input 
+                    type="text" placeholder="e.g. 10/22/2026"
+                    value={retSearchVal}
+                    onChange={(e) => setRetSearchVal(e.target.value)}
+                    className="border border-slate-300 rounded-lg text-xs px-3 py-1.5 bg-white"
+                  />
+                )}
+
+                {retSearchMode === 'VENDOR' && (
+                  <select 
+                    value={retSearchVal}
+                    onChange={(e) => setRetSearchVal(e.target.value)}
+                    className="border border-slate-300 rounded-lg text-xs px-3 py-1.5 bg-white font-medium"
+                  >
+                    <option value="">-- Select Vendor --</option>
+                    {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                  </select>
+                )}
+
+                {retSearchMode === 'REASON' && (
+                  <input 
+                    type="text" placeholder="Search reason..."
+                    value={retSearchVal}
+                    onChange={(e) => setRetSearchVal(e.target.value)}
+                    className="border border-slate-300 rounded-lg text-xs px-3 py-1.5 bg-white"
+                  />
+                )}
               </div>
 
               <button 
-                onClick={() => exportSelectedToExcel('returns', returns.filter(ret => currentUser.role !== 'Vendor' || ret.vendorId === currentUser.vendorId), selectedReturnIds)}
+                onClick={() => exportSelectedToExcel('returns', scopedReturns, selectedReturnIds)}
                 className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
               >
                 <Download className="w-3.5 h-3.5" />
@@ -2064,19 +1874,7 @@ export default function App() {
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-100 text-slate-600 font-semibold border-b">
                   <tr>
-                    <th className="p-3 w-10 text-center">
-                      <input 
-                        type="checkbox"
-                        onChange={(e) => {
-                          const filtered = returns.filter(ret => currentUser.role !== 'Vendor' || ret.vendorId === currentUser.vendorId);
-                          if (e.target.checked) {
-                            setSelectedReturnIds(filtered.map(r => r.id));
-                          } else {
-                            setSelectedReturnIds([]);
-                          }
-                        }}
-                      />
-                    </th>
+                    <th className="p-3 w-10 text-center"><input type="checkbox" onChange={(e) => setSelectedReturnIds(e.target.checked ? scopedReturns.map(r => r.id) : [])} /></th>
                     <th className="p-3">Return ID</th>
                     <th className="p-3">Item Name</th>
                     <th className="p-3">Return Type</th>
@@ -2084,80 +1882,57 @@ export default function App() {
                     <th className="p-3">Reason</th>
                     <th className="p-3">Status</th>
                     <th className="p-3">Date</th>
-                    <th className="p-3 text-right">Actions (Today Only)</th>
+                    <th className="p-3 text-right">Actions (Today Only: Edit/Cancel)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {returns
-                    .filter(ret => (currentUser.role !== 'Vendor' || ret.vendorId === currentUser.vendorId) && 
-                      (!searchQueryVal.trim() || ret.id.toLowerCase().includes(searchQueryVal.toLowerCase()) || ret.itemName.toLowerCase().includes(searchQueryVal.toLowerCase()) || ret.reason.toLowerCase().includes(searchQueryVal.toLowerCase()))
-                    )
-                    .map(ret => {
-                      const isSelected = selectedReturnIds.includes(ret.id);
-                      const todayDateStr = new Date().toLocaleDateString();
-                      const isTodayReturn = ret.date === todayDateStr;
+                  {scopedReturns.map(ret => {
+                    const isSelected = selectedReturnIds.includes(ret.id);
+                    const todayDateStr = new Date().toLocaleDateString();
+                    const isTodayReturn = ret.date === todayDateStr;
 
-                      return (
-                        <tr key={ret.id} className="hover:bg-slate-50">
-                          <td className="p-3 text-center">
-                            <input 
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setSelectedReturnIds([...selectedReturnIds, ret.id]);
-                                } else {
-                                  setSelectedReturnIds(selectedReturnIds.filter(id => id !== ret.id));
-                                }
-                              }}
-                            />
-                          </td>
-                          <td className="p-3 font-bold text-slate-700">{ret.id}</td>
-                          <td className="p-3 font-semibold text-slate-800">{ret.itemName}</td>
-                          <td className="p-3">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
-                              ret.type.includes('Damage') ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
-                            }`}>
-                              {ret.type}
-                            </span>
-                          </td>
-                          <td className="p-3 font-bold">{ret.qty}</td>
-                          <td className="p-3 text-slate-500">{ret.reason}</td>
-                          <td className="p-3 font-medium text-slate-700">{ret.status}</td>
-                          <td className="p-3 text-slate-400 font-mono text-[11px]">{ret.date}</td>
-                          <td className="p-3 text-right space-x-2">
-                            {isTodayReturn ? (
-                              <>
-                                <button 
-                                  onClick={() => {
-                                    const newReason = prompt(`Edit Return Reason for ${ret.id}:`, ret.reason);
-                                    if (newReason !== null) {
-                                      setReturns(returns.map(r => r.id === ret.id ? { ...r, reason: newReason } : r));
-                                      addLog(`Edited return record ${ret.id}`);
-                                    }
-                                  }}
-                                  className="text-xs text-indigo-600 hover:underline font-semibold"
-                                >
-                                  Edit
-                                </button>
-                                <button 
-                                  onClick={() => {
-                                    if (confirm(`Return record ${ret.id} ကို Cancel လုပ်၍ ဖျက်ပစ်ရန် သေချာပါသလား?`)) {
-                                      setReturns(returns.filter(r => r.id !== ret.id));
-                                      addLog(`Cancelled return record ${ret.id}`);
-                                    }
-                                  }}
-                                  className="text-xs text-rose-600 hover:underline font-semibold"
-                                >
-                                  Cancel
-                                </button>
-                              </>
-                            ) : (
-                              <span className="text-[10px] text-slate-400">Locked (Past Date)</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
+                    return (
+                      <tr key={ret.id} className="hover:bg-slate-50">
+                        <td className="p-3 text-center"><input type="checkbox" checked={isSelected} onChange={(e) => setSelectedReturnIds(e.target.checked ? [...selectedReturnIds, ret.id] : selectedReturnIds.filter(id => id !== ret.id))} /></td>
+                        <td className="p-3 font-bold text-slate-700">{ret.id}</td>
+                        <td className="p-3 font-semibold text-slate-800">{ret.itemName}</td>
+                        <td className="p-3">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${ret.type.includes('Damage') ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                            {ret.type}
+                          </span>
+                        </td>
+                        <td className="p-3 font-bold">{ret.qty}</td>
+                        <td className="p-3 text-slate-500">{ret.reason}</td>
+                        <td className="p-3 font-medium text-slate-700">{ret.status}</td>
+                        <td className="p-3 text-slate-400 font-mono text-[11px]">{ret.date}</td>
+                        <td className="p-3 text-right space-x-2">
+                          {isTodayReturn ? (
+                            <>
+                              {/* Edit Return: Edit Item Name & Quantity */}
+                              <button 
+                                onClick={() => {
+                                  setEditingReturnItem(ret);
+                                  setEditReturnForm({ itemName: ret.itemName, qty: ret.qty, reason: ret.reason });
+                                  setShowEditReturnModal(true);
+                                }}
+                                className="text-xs text-indigo-600 hover:underline font-semibold"
+                              >
+                                Edit
+                              </button>
+                              {/* Cancel Return: Removes record & restores stock */}
+                              <button 
+                                onClick={() => handleCancelReturnItem(ret)}
+                                className="text-xs text-rose-600 hover:underline font-semibold"
+                              >
+                                Cancel
+                              </button>
+                            </>
+                          ) : (
+                            <span className="text-[10px] text-slate-400">Locked (Past Date)</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
                   })}
                 </tbody>
               </table>
@@ -2171,22 +1946,15 @@ export default function App() {
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
               <div>
                 <h3 className="font-bold text-slate-800 text-sm">Vendors Management & Client Payout Reports</h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Manage vendors, bank accounts, net payable calculations, and official client payout statements (.xls).
-                </p>
+                <p className="text-xs text-slate-500 mt-0.5">Manage vendors, bank accounts, net payable calculations, and official client payout statements (.xls).</p>
               </div>
 
               {currentUser.role === 'Admin' && (
                 <button 
-                  onClick={() => {
-                    setEditingVendor(null);
-                    setNewVendor({ name: '', phone: '', address: '', bankAccount: '' });
-                    setShowVendorModal(true);
-                  }}
+                  onClick={() => { setEditingVendor(null); setNewVendor({ name: '', phone: '', address: '', bankAccount: '' }); setShowVendorModal(true); }}
                   className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-4 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
                 >
-                  <Plus className="w-4 h-4 mr-1" />
-                  <span>Register New Vendor</span>
+                  <Plus className="w-4 h-4 mr-1" /><span>Register New Vendor</span>
                 </button>
               )}
             </div>
@@ -2195,12 +1963,9 @@ export default function App() {
               {vendors.map(vendor => {
                 const vendorDeliveredOrders = orders.filter(o => o.vendorId === vendor.id && (o.status === 'Delivered' || o.status === 'Partial Return') && !o.cancelled);
                 const vendorActiveOrders = orders.filter(o => o.vendorId === vendor.id && !o.cancelled); 
-                
                 const totalCodCollected = vendorDeliveredOrders.reduce((sum, o) => sum + (Number(o.totalCod) || 0), 0);
                 const totalHandlingFee = vendorActiveOrders.reduce((sum, o) => sum + (Number(o.tnHandlingFee) || 0), 0);
-                
                 const totalStoreCharge = vendorDeliveredOrders.reduce((sum, o) => sum + calculateOrderStoreCharges(o), 0);
-
                 const netPayable = totalCodCollected - totalHandlingFee - totalStoreCharge;
 
                 return (
@@ -2212,68 +1977,28 @@ export default function App() {
                         {vendor.bankAccount && <p className="text-[11px] text-indigo-600 font-mono mt-0.5">🏦 {vendor.bankAccount}</p>}
                       </div>
                       <div className="text-right">
-                        <span className="bg-indigo-50 text-indigo-700 font-bold text-xs px-2.5 py-1 rounded-full">
-                          {vendor.id}
-                        </span>
+                        <span className="bg-indigo-50 text-indigo-700 font-bold text-xs px-2.5 py-1 rounded-full">{vendor.id}</span>
                         {currentUser.role === 'Admin' && (
                           <div className="mt-2 space-x-2">
-                            <button 
-                              onClick={() => {
-                                setEditingVendor(vendor);
-                                setNewVendor({ name: vendor.name, phone: vendor.phone, address: vendor.address, bankAccount: vendor.bankAccount });
-                                setShowVendorModal(true);
-                              }}
-                              className="text-xs text-indigo-600 hover:underline font-semibold"
-                            >
-                              Edit
-                            </button>
-                            <button 
-                              onClick={() => handleDeleteVendor(vendor.id)}
-                              className="text-xs text-rose-600 hover:underline font-semibold"
-                            >
-                              Delete
-                            </button>
+                            <button onClick={() => { setEditingVendor(vendor); setNewVendor({ name: vendor.name, phone: vendor.phone, address: vendor.address, bankAccount: vendor.bankAccount }); setShowVendorModal(true); }} className="text-xs text-indigo-600 hover:underline font-semibold">Edit</button>
+                            <button onClick={() => handleDeleteVendor(vendor.id)} className="text-xs text-rose-600 hover:underline font-semibold">Delete</button>
                           </div>
                         )}
                       </div>
                     </div>
 
                     <div className="space-y-2 text-xs">
-                      <div className="flex justify-between text-slate-600">
-                        <span>Delivered COD Collected:</span>
-                        <span className="font-semibold text-slate-800">{totalCodCollected.toLocaleString()} Ks</span>
-                      </div>
-                      <div className="flex justify-between text-slate-600">
-                        <span>T&N Handling Fee Deduct (Active orders):</span>
-                        <span className="font-semibold text-red-600">- {totalHandlingFee.toLocaleString()} Ks</span>
-                      </div>
-                      <div className="flex justify-between text-slate-600">
-                        <span>Warehouse Store Charges (per voucher):</span>
-                        <span className="font-semibold text-red-600">- {totalStoreCharge.toLocaleString()} Ks</span>
-                      </div>
-                      <div className="border-t pt-2 flex justify-between font-bold text-sm text-slate-900">
-                        <span>Net Balance Payable:</span>
-                        <span className="text-emerald-600">{netPayable.toLocaleString()} Ks</span>
-                      </div>
+                      <div className="flex justify-between text-slate-600"><span>Delivered COD Collected:</span><span className="font-semibold text-slate-800">{totalCodCollected.toLocaleString()} Ks</span></div>
+                      <div className="flex justify-between text-slate-600"><span>T&N Handling Fee Deduct:</span><span className="font-semibold text-red-600">- {totalHandlingFee.toLocaleString()} Ks</span></div>
+                      <div className="flex justify-between text-slate-600"><span>Warehouse Store Charges:</span><span className="font-semibold text-red-600">- {totalStoreCharge.toLocaleString()} Ks</span></div>
+                      <div className="border-t pt-2 flex justify-between font-bold text-sm text-slate-900"><span>Net Balance Payable:</span><span className="text-emerald-600">{netPayable.toLocaleString()} Ks</span></div>
                     </div>
 
                     <div className="flex space-x-2">
-                      <button 
-                        onClick={() => exportVendorStatement(vendor.id)}
-                        className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold py-2 rounded-lg transition-colors flex items-center justify-center space-x-1 shadow-sm"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        <span>Client Payout Report (.xls)</span>
+                      <button onClick={() => exportVendorStatement(vendor.id)} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold py-2 rounded-lg transition-colors flex items-center justify-center space-x-1 shadow-sm">
+                        <Download className="w-3.5 h-3.5" /><span>Client Payout Report (.xls)</span>
                       </button>
-                      
-                      <button 
-                        onClick={() => {
-                          exportSelectedToExcel(`settlement_${vendor.id}`, vendorDeliveredOrders, vendorDeliveredOrders.map(o => o.id));
-                          addLog(`Exported full settlement statement (.xls) for Vendor ${vendor.name}`);
-                        }}
-                        className="bg-slate-900 hover:bg-slate-800 text-white text-xs px-3 py-2 rounded-lg transition-colors flex items-center justify-center"
-                        title="Full Order Details Excel (.xls)"
-                      >
+                      <button onClick={() => { exportSelectedToExcel(`settlement_${vendor.id}`, vendorDeliveredOrders, vendorDeliveredOrders.map(o => o.id)); addLog(`Exported full settlement statement (.xls) for Vendor ${vendor.name}`); }} className="bg-slate-900 hover:bg-slate-800 text-white text-xs px-3 py-2 rounded-lg transition-colors flex items-center justify-center">
                         <FileSpreadsheet className="w-3.5 h-3.5" />
                       </button>
                     </div>
@@ -2294,16 +2019,8 @@ export default function App() {
               </div>
 
               {currentUser.role === 'Admin' && (
-                <button 
-                  onClick={() => {
-                    setEditingDelivery(null);
-                    setNewDelivery({ name: '', phone: '', address: '', bankAccount: '' });
-                    setShowDeliveryModal(true);
-                  }}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-4 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
-                >
-                  <Plus className="w-4 h-4 mr-1" />
-                  <span>Register New Delivery Service</span>
+                <button onClick={() => { setEditingDelivery(null); setNewDelivery({ name: '', phone: '', address: '', bankAccount: '' }); setShowDeliveryModal(true); }} className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-4 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm">
+                  <Plus className="w-4 h-4 mr-1" /><span>Register New Delivery Service</span>
                 </button>
               )}
             </div>
@@ -2327,51 +2044,21 @@ export default function App() {
                         <span className="bg-indigo-50 text-indigo-700 font-bold text-xs px-2.5 py-1 rounded-full">{del.id}</span>
                         {currentUser.role === 'Admin' && (
                           <div className="mt-2 text-right space-x-2">
-                            <button 
-                              onClick={() => {
-                                setEditingDelivery(del);
-                                setNewDelivery({ name: del.name, phone: del.phone, address: del.address, bankAccount: del.bankAccount });
-                                setShowDeliveryModal(true);
-                              }}
-                              className="text-xs text-indigo-600 hover:underline font-semibold"
-                            >
-                              Edit
-                            </button>
-                            <button 
-                              onClick={() => handleDeleteDelivery(del.id, del.name)}
-                              className="text-xs text-rose-600 hover:underline font-semibold"
-                            >
-                              Delete
-                            </button>
+                            <button onClick={() => { setEditingDelivery(del); setNewDelivery({ name: del.name, phone: del.phone, address: del.address, bankAccount: del.bankAccount }); setShowDeliveryModal(true); }} className="text-xs text-indigo-600 hover:underline font-semibold">Edit</button>
+                            <button onClick={() => handleDeleteDelivery(del.id, del.name)} className="text-xs text-rose-600 hover:underline font-semibold">Delete</button>
                           </div>
                         )}
                       </div>
                     </div>
 
                     <div className="space-y-2 text-xs">
-                      <div className="flex justify-between text-slate-600">
-                        <span>စာရင်းပို့ပြီး (Delivered Orders):</span>
-                        <span className="font-bold text-emerald-600">{sentList.length} Waybills</span>
-                      </div>
-                      <div className="flex justify-between text-slate-600">
-                        <span>ပို့ရန်ကျန်စာရင်း (Pending / In-Transit):</span>
-                        <span className="font-bold text-amber-600">{pendingList.length} Waybills</span>
-                      </div>
-                      <div className="flex justify-between text-slate-600">
-                        <span>ရရန်ရှိ COD စာရင်း (COD Receivable):</span>
-                        <span className="font-bold text-slate-800">{codReceivable.toLocaleString()} Ks</span>
-                      </div>
+                      <div className="flex justify-between text-slate-600"><span>စာရင်းပို့ပြီး (Delivered Orders):</span><span className="font-bold text-emerald-600">{sentList.length} Waybills</span></div>
+                      <div className="flex justify-between text-slate-600"><span>ပို့ရန်ကျန်စာရင်း (Pending / In-Transit):</span><span className="font-bold text-amber-600">{pendingList.length} Waybills</span></div>
+                      <div className="flex justify-between text-slate-600"><span>ရရန်ရှိ COD စာရင်း (COD Receivable):</span><span className="font-bold text-slate-800">{codReceivable.toLocaleString()} Ks</span></div>
                     </div>
 
-                    <button 
-                      onClick={() => {
-                        exportSelectedToExcel(`delivery_${del.id}`, delOrders, delOrders.map(o => o.id));
-                        addLog(`Exported delivery report (.xls) for ${del.name}`);
-                      }}
-                      className="w-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold py-2 rounded-lg transition-colors flex items-center justify-center space-x-1"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      <span>Export Delivery Report (.xls)</span>
+                    <button onClick={() => { exportSelectedToExcel(`delivery_${del.id}`, delOrders, delOrders.map(o => o.id)); addLog(`Exported delivery report (.xls) for ${del.name}`); }} className="w-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold py-2 rounded-lg transition-colors flex items-center justify-center space-x-1">
+                      <Download className="w-3.5 h-3.5" /><span>Export Delivery Report (.xls)</span>
                     </button>
                   </div>
                 );
@@ -2380,44 +2067,77 @@ export default function App() {
           </div>
         )}
 
-        {/* Cash Management Tab */}
+        {/* CASH MANAGEMENT TAB */}
         {activeTab === 'cash_ledger' && currentUser.role !== 'Vendor' && (
           <div className="space-y-4">
-            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-              <div className="flex items-center space-x-2 w-full sm:w-auto">
-                <div className="relative w-full sm:w-64">
-                  <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-                  <input 
-                    type="text"
-                    placeholder="Search ID, Ref No, Description..."
-                    value={searchQueryVal}
-                    onChange={(e) => setSearchQueryVal(e.target.value)}
-                    className="w-full pl-9 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
+            
+            {/* Unified Search By Widget for Cash Management */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                <div className="relative">
+                  <button 
+                    onClick={() => setShowCashSearchDropdown(!showCashSearchDropdown)}
+                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs px-3 py-2 rounded-lg border border-slate-300 flex items-center space-x-1"
+                  >
+                    <span>Search by: <strong className="text-indigo-600">{cashSearchMode}</strong></span>
+                    <ChevronRight className="w-3.5 h-3.5 ml-1" />
+                  </button>
+
+                  {showCashSearchDropdown && (
+                    <div className="absolute left-0 mt-1 w-44 bg-white border border-slate-200 rounded-lg shadow-xl z-20 text-xs py-1">
+                      {['ID', 'DATE', 'TYPE'].map(mode => (
+                        <button
+                          key={mode}
+                          onClick={() => { setCashSearchMode(mode); setCashSearchVal(''); setShowCashSearchDropdown(false); }}
+                          className={`w-full text-left px-3 py-2 hover:bg-indigo-50 font-medium ${cashSearchMode === mode ? 'text-indigo-600 font-bold bg-indigo-50/50' : 'text-slate-700'}`}
+                        >
+                          {mode === 'ID' ? 'ID / Reference No' : mode === 'DATE' ? 'Date' : 'Flow Type (COD_IN/VENDOR_OUT)'}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
+
+                {cashSearchMode === 'ID' && (
+                  <div className="relative w-full sm:w-64">
+                    <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+                    <input 
+                      type="text" placeholder="Search ID, Ref No, Description..."
+                      value={cashSearchVal}
+                      onChange={(e) => setCashSearchVal(e.target.value)}
+                      className="w-full pl-9 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                )}
+
+                {cashSearchMode === 'DATE' && (
+                  <input 
+                    type="text" placeholder="e.g. 10/22/2026"
+                    value={cashSearchVal}
+                    onChange={(e) => setCashSearchVal(e.target.value)}
+                    className="border border-slate-300 rounded-lg text-xs px-3 py-1.5 bg-white"
+                  />
+                )}
+
+                {cashSearchMode === 'TYPE' && (
+                  <select 
+                    value={cashSearchVal}
+                    onChange={(e) => setCashSearchVal(e.target.value)}
+                    className="border border-slate-300 rounded-lg text-xs px-3 py-1.5 bg-white font-medium"
+                  >
+                    <option value="">-- All Types --</option>
+                    <option value="COD_IN">COD_IN</option>
+                    <option value="VENDOR_OUT">VENDOR_OUT</option>
+                  </select>
+                )}
               </div>
 
               <div className="flex space-x-2">
-                <button 
-                  onClick={() => exportSelectedToExcel('cash_ledger', cashLedger, selectedCashIds)}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Export Excel (.xls)</span>
+                <button onClick={() => exportSelectedToExcel('cash_ledger', scopedCashLedger, selectedCashIds)} className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm">
+                  <Download className="w-3.5 h-3.5" /><span>Export Excel (.xls)</span>
                 </button>
-                <button 
-                  onClick={() => {
-                    setCashFlowType('COD_IN');
-                    setSelectedPartnerId('');
-                    setSelectedVoucherIds([]);
-                    setCashTransactionNo('');
-                    setCashDescription('');
-                    setShowCashModal(true);
-                  }}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-4 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
-                >
-                  <Plus className="w-4 h-4 mr-1" />
-                  <span>Add Cash Transaction</span>
+                <button onClick={() => { setCashFlowType('COD_IN'); setSelectedPartnerId(''); setSelectedVoucherIds([]); setCashTransactionNo(''); setCashDescription(''); setShowCashModal(true); }} className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-4 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm">
+                  <Plus className="w-4 h-4 mr-1" /><span>Add Cash Transaction</span>
                 </button>
               </div>
             </div>
@@ -2425,24 +2145,15 @@ export default function App() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
                 <p className="text-xs font-semibold text-slate-500 uppercase">Total COD Inflow (Actual)</p>
-                <p className="text-2xl font-bold text-emerald-600 mt-1">
-                  {cashLedger.filter(c => c.type === 'COD_IN').reduce((s, c) => s + c.amount, 0).toLocaleString()} Ks
-                </p>
+                <p className="text-2xl font-bold text-emerald-600 mt-1">{cashLedger.filter(c => c.type === 'COD_IN').reduce((s, c) => s + c.amount, 0).toLocaleString()} Ks</p>
               </div>
               <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
                 <p className="text-xs font-semibold text-slate-500 uppercase">Total Vendor Outflow (Actual)</p>
-                <p className="text-2xl font-bold text-rose-600 mt-1">
-                  {cashLedger.filter(c => c.type === 'VENDOR_OUT' || c.type === 'EXPENSE').reduce((s, c) => s + c.amount, 0).toLocaleString()} Ks
-                </p>
+                <p className="text-2xl font-bold text-rose-600 mt-1">{cashLedger.filter(c => c.type === 'VENDOR_OUT' || c.type === 'EXPENSE').reduce((s, c) => s + c.amount, 0).toLocaleString()} Ks</p>
               </div>
               <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
                 <p className="text-xs font-semibold text-slate-500 uppercase">Net T&N Cash Balance</p>
-                <p className="text-2xl font-bold text-indigo-600 mt-1">
-                  {(
-                    cashLedger.filter(c => c.type === 'COD_IN').reduce((s, c) => s + c.amount, 0) -
-                    cashLedger.filter(c => c.type === 'VENDOR_OUT' || c.type === 'EXPENSE').reduce((s, c) => s + c.amount, 0)
-                  ).toLocaleString()} Ks
-                </p>
+                <p className="text-2xl font-bold text-indigo-600 mt-1">{(cashLedger.filter(c => c.type === 'COD_IN').reduce((s, c) => s + c.amount, 0) - cashLedger.filter(c => c.type === 'VENDOR_OUT' || c.type === 'EXPENSE').reduce((s, c) => s + c.amount, 0)).toLocaleString()} Ks</p>
               </div>
             </div>
 
@@ -2450,18 +2161,7 @@ export default function App() {
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-100 text-slate-600 font-semibold border-b">
                   <tr>
-                    <th className="p-3 w-10 text-center">
-                      <input 
-                        type="checkbox"
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedCashIds(cashLedger.map(c => c.id));
-                          } else {
-                            setSelectedCashIds([]);
-                          }
-                        }}
-                      />
-                    </th>
+                    <th className="p-3 w-10 text-center"><input type="checkbox" onChange={(e) => setSelectedCashIds(e.target.checked ? scopedCashLedger.map(c => c.id) : [])} /></th>
                     <th className="p-3">ID</th>
                     <th className="p-3">Type</th>
                     <th className="p-3">Reference / Voucher</th>
@@ -2471,41 +2171,19 @@ export default function App() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {cashLedger
-                    .filter(c => !searchQueryVal.trim() || c.id.toLowerCase().includes(searchQueryVal.toLowerCase()) || (c.referenceId && c.referenceId.toLowerCase().includes(searchQueryVal.toLowerCase())) || (c.description && c.description.toLowerCase().includes(searchQueryVal.toLowerCase())))
-                    .map(c => {
-                      const isSelected = selectedCashIds.includes(c.id);
-                      return (
-                        <tr key={c.id} className="hover:bg-slate-50">
-                          <td className="p-3 text-center">
-                            <input 
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setSelectedCashIds([...selectedCashIds, c.id]);
-                                } else {
-                                  setSelectedCashIds(selectedCashIds.filter(id => id !== c.id));
-                                }
-                              }}
-                            />
-                          </td>
-                          <td className="p-3 font-mono text-slate-500">{c.id}</td>
-                          <td className="p-3">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                              c.type === 'COD_IN' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
-                            }`}>
-                              {c.type}
-                            </span>
-                          </td>
-                          <td className="p-3 font-bold text-indigo-600">{c.referenceId || '-'}</td>
-                          <td className="p-3 text-slate-700">{c.description || '-'}</td>
-                          <td className={`p-3 font-bold ${c.type === 'COD_IN' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                            {c.type === 'COD_IN' ? '+' : '-'} {c.amount.toLocaleString()} Ks
-                          </td>
-                          <td className="p-3 text-slate-400 font-mono text-[11px]">{c.date}</td>
-                        </tr>
-                      );
+                  {scopedCashLedger.map(c => {
+                    const isSelected = selectedCashIds.includes(c.id);
+                    return (
+                      <tr key={c.id} className="hover:bg-slate-50">
+                        <td className="p-3 text-center"><input type="checkbox" checked={isSelected} onChange={(e) => setSelectedCashIds(e.target.checked ? [...selectedCashIds, c.id] : selectedCashIds.filter(id => id !== c.id))} /></td>
+                        <td className="p-3 font-mono text-slate-500">{c.id}</td>
+                        <td className="p-3"><span className={`px-2 py-0.5 rounded text-[10px] font-bold ${c.type === 'COD_IN' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>{c.type}</span></td>
+                        <td className="p-3 font-bold text-indigo-600">{c.referenceId || '-'}</td>
+                        <td className="p-3 text-slate-700">{c.description || '-'}</td>
+                        <td className={`p-3 font-bold ${c.type === 'COD_IN' ? 'text-emerald-600' : 'text-rose-600'}`}>{c.type === 'COD_IN' ? '+' : '-'} {c.amount.toLocaleString()} Ks</td>
+                        <td className="p-3 text-slate-400 font-mono text-[11px]">{c.date}</td>
+                      </tr>
+                    );
                   })}
                 </tbody>
               </table>
@@ -2517,36 +2195,18 @@ export default function App() {
           <div className="space-y-4">
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
               <div>
-                <h3 className="font-bold text-slate-800 text-sm flex items-center">
-                  <Users className="w-4 h-4 mr-2 text-indigo-600" />
-                  System Users & Access Management
-                </h3>
+                <h3 className="font-bold text-slate-800 text-sm flex items-center"><Users className="w-4 h-4 mr-2 text-indigo-600" />System Users & Access Management</h3>
                 <p className="text-xs text-slate-500 mt-0.5">Create, edit and manage user credentials and roles</p>
               </div>
-
-              <button 
-                onClick={() => {
-                  setEditingUser(null);
-                  setNewUser({ username: '', password: '', name: '', role: 'Staff', vendorId: '' });
-                  setShowUserModal(true);
-                }}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-4 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
-              >
-                <UserPlus className="w-4 h-4 mr-1" />
-                <span>Create New User</span>
+              <button onClick={() => { setEditingUser(null); setNewUser({ username: '', password: '', name: '', role: 'Staff', vendorId: '' }); setShowUserModal(true); }} className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-4 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm">
+                <UserPlus className="w-4 h-4 mr-1" /><span>Create New User</span>
               </button>
             </div>
 
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-100 text-slate-600 font-semibold border-b">
-                  <tr>
-                    <th className="p-3">User ID</th>
-                    <th className="p-3">Username</th>
-                    <th className="p-3">Display Name</th>
-                    <th className="p-3">Role</th>
-                    <th className="p-3 text-right">Actions</th>
-                  </tr>
+                  <tr><th className="p-3">User ID</th><th className="p-3">Username</th><th className="p-3">Display Name</th><th className="p-3">Role</th><th className="p-3 text-right">Actions</th></tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {usersList.map(u => (
@@ -2554,33 +2214,10 @@ export default function App() {
                       <td className="p-3 font-mono text-slate-400">{u.id}</td>
                       <td className="p-3 font-bold text-slate-800">{u.username}</td>
                       <td className="p-3 text-slate-700">{u.name}</td>
-                      <td className="p-3">
-                        <span className={`px-2.5 py-0.5 rounded text-[10px] font-bold ${
-                          u.role === 'Admin' ? 'bg-indigo-100 text-indigo-700' :
-                          u.role === 'Staff' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'
-                        }`}>
-                          {u.role}
-                        </span>
-                      </td>
+                      <td className="p-3"><span className={`px-2.5 py-0.5 rounded text-[10px] font-bold ${u.role === 'Admin' ? 'bg-indigo-100 text-indigo-700' : u.role === 'Staff' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>{u.role}</span></td>
                       <td className="p-3 text-right space-x-3">
-                        <button 
-                          onClick={() => {
-                            setEditingUser(u);
-                            setNewUser({ username: u.username, password: '', name: u.name, role: u.role, vendorId: u.vendorId || '' });
-                            setShowUserModal(true);
-                          }}
-                          className="text-indigo-600 hover:underline font-semibold text-xs"
-                        >
-                          Edit
-                        </button>
-                        {u.username !== 'admin' && (
-                          <button 
-                            onClick={() => handleDeleteUser(u.id)}
-                            className="text-rose-600 hover:underline font-bold text-xs"
-                          >
-                            Delete
-                          </button>
-                        )}
+                        <button onClick={() => { setEditingUser(u); setNewUser({ username: u.username, password: '', name: u.name, role: u.role, vendorId: u.vendorId || '' }); setShowUserModal(true); }} className="text-indigo-600 hover:underline font-semibold text-xs">Edit</button>
+                        {u.username !== 'admin' && <button onClick={() => handleDeleteUser(u.id)} className="text-rose-600 hover:underline font-bold text-xs">Delete</button>}
                       </td>
                     </tr>
                   ))}
@@ -2594,43 +2231,25 @@ export default function App() {
           <div className="space-y-4">
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
               <div>
-                <h3 className="font-bold text-slate-800 text-sm flex items-center">
-                  <Activity className="w-4 h-4 mr-2 text-indigo-600" />
-                  Audit Trail & Action Logs (Data Safety)
-                </h3>
+                <h3 className="font-bold text-slate-800 text-sm flex items-center"><Activity className="w-4 h-4 mr-2 text-indigo-600" />Audit Trail & Action Logs</h3>
                 <p className="text-xs text-slate-500 mt-0.5">Real-time log tracking user modifications and operations</p>
               </div>
-
-              <button 
-                onClick={() => exportSelectedToExcel('audit_logs', logs, [])}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Export Logs (.xls)</span>
+              <button onClick={() => exportSelectedToExcel('audit_logs', logs, [])} className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm">
+                <Download className="w-3.5 h-3.5" /><span>Export Logs (.xls)</span>
               </button>
             </div>
 
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-100 text-slate-600 font-semibold border-b">
-                  <tr>
-                    <th className="p-3">Log ID</th>
-                    <th className="p-3">User</th>
-                    <th className="p-3">Role</th>
-                    <th className="p-3">Action Details</th>
-                    <th className="p-3">Timestamp</th>
-                  </tr>
+                  <tr><th className="p-3">Log ID</th><th className="p-3">User</th><th className="p-3">Role</th><th className="p-3">Action Details</th><th className="p-3">Timestamp</th></tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {logs.map(log => (
                     <tr key={log.id} className="hover:bg-slate-50">
                       <td className="p-3 font-mono text-slate-400">{log.id}</td>
                       <td className="p-3 font-bold text-slate-800">{log.user}</td>
-                      <td className="p-3">
-                        <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-medium text-[10px]">
-                          {log.role}
-                        </span>
-                      </td>
+                      <td className="p-3"><span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-medium text-[10px]">{log.role}</span></td>
                       <td className="p-3 text-slate-700">{log.action}</td>
                       <td className="p-3 text-slate-400 font-mono text-[11px]">{log.timestamp}</td>
                     </tr>
@@ -2643,7 +2262,152 @@ export default function App() {
 
       </main>
 
-      {/* Advanced Cash Transaction Modal (COD Flow first, then Vendor Payout) */}
+      {/* EDIT INVENTORY ITEM MODAL (Full editing form for Today's stock-in) */}
+      {showEditItemModal && editingInventoryItem && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex justify-between items-center border-b pb-3">
+              <h3 className="font-bold text-slate-800 text-sm">Edit Inventory Item (Today's Batch)</h3>
+              <button onClick={() => setShowEditItemModal(false)} className="text-slate-400 hover:text-slate-600 text-lg">✕</button>
+            </div>
+
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const updatedItem = {
+                ...editingInventoryItem,
+                name: editInventoryForm.name,
+                category: editInventoryForm.category,
+                price: Number(editInventoryForm.price) || 0,
+                quantity: Number(editInventoryForm.quantity) || 0,
+                handlingFee: Number(editInventoryForm.handlingFee) || 500,
+                storeChargePerDay: Number(editInventoryForm.storeChargePerDay) || 30,
+                freeDays: Number(editInventoryForm.freeDays) || 7
+              };
+              setItems(items.map(i => i.id === editingInventoryItem.id ? updatedItem : i));
+              addLog(`Updated inventory item details for ${updatedItem.name} (SKU: ${updatedItem.sku})`);
+              setShowEditItemModal(false);
+              setEditingInventoryItem(null);
+            }} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Item Name *</label>
+                <input 
+                  type="text" required value={editInventoryForm.name}
+                  onChange={(e) => setEditInventoryForm({ ...editInventoryForm, name: e.target.value })}
+                  className="w-full border border-slate-300 rounded-lg p-2"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Category</label>
+                <input 
+                  type="text" value={editInventoryForm.category}
+                  onChange={(e) => setEditInventoryForm({ ...editInventoryForm, category: e.target.value })}
+                  className="w-full border border-slate-300 rounded-lg p-2"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Selling Price (Ks) *</label>
+                  <input 
+                    type="number" required value={editInventoryForm.price}
+                    onChange={(e) => setEditInventoryForm({ ...editInventoryForm, price: e.target.value })}
+                    className="w-full border border-slate-300 rounded-lg p-2"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Quantity *</label>
+                  <input 
+                    type="number" required value={editInventoryForm.quantity}
+                    onChange={(e) => setEditInventoryForm({ ...editInventoryForm, quantity: e.target.value })}
+                    className="w-full border border-slate-300 rounded-lg p-2"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-3 flex space-x-2">
+                <button type="button" onClick={() => setShowEditItemModal(false)} className="w-1/2 bg-slate-100 py-2.5 rounded-lg font-semibold">Cancel</button>
+                <button type="submit" className="w-1/2 bg-indigo-600 text-white py-2.5 rounded-lg font-semibold">Save Changes</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT RETURN MODAL (Allows editing Item Name & Quantity with stock adjustment) */}
+      {showEditReturnModal && editingReturnItem && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex justify-between items-center border-b pb-3">
+              <h3 className="font-bold text-slate-800 text-sm">Edit Return Record ({editingReturnItem.id})</h3>
+              <button onClick={() => setShowEditReturnModal(false)} className="text-slate-400 hover:text-slate-600 text-lg">✕</button>
+            </div>
+
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const oldQty = Number(editingReturnItem.qty) || 0;
+              const newQty = Number(editReturnForm.qty) || 0;
+              const qtyDiff = newQty - oldQty;
+
+              // Adjust stock in inventory if itemId is linked
+              if (editingReturnItem.itemId && qtyDiff !== 0) {
+                setItems(prev => prev.map(i => {
+                  if (i.id === editingReturnItem.itemId) {
+                    return { ...i, quantity: Math.max(0, (Number(i.quantity) || 0) - qtyDiff) };
+                  }
+                  return i;
+                }));
+              }
+
+              const updatedRet = {
+                ...editingReturnItem,
+                itemName: editReturnForm.itemName,
+                qty: newQty,
+                reason: editReturnForm.reason
+              };
+
+              setReturns(returns.map(r => r.id === editingReturnItem.id ? updatedRet : r));
+              addLog(`Updated return record ${updatedRet.id}: Item Name -> ${updatedRet.itemName}, Qty -> ${updatedRet.qty}`);
+              setShowEditReturnModal(false);
+              setEditingReturnItem(null);
+            }} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Item Name *</label>
+                <input 
+                  type="text" required value={editReturnForm.itemName}
+                  onChange={(e) => setEditReturnForm({ ...editReturnForm, itemName: e.target.value })}
+                  className="w-full border border-slate-300 rounded-lg p-2 font-semibold"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Return Quantity *</label>
+                <input 
+                  type="number" min="1" required value={editReturnForm.qty}
+                  onChange={(e) => setEditReturnForm({ ...editReturnForm, qty: Number(e.target.value) })}
+                  className="w-full border border-slate-300 rounded-lg p-2 font-bold text-indigo-600"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Reason / Note</label>
+                <textarea 
+                  rows={2} value={editReturnForm.reason}
+                  onChange={(e) => setEditReturnForm({ ...editReturnForm, reason: e.target.value })}
+                  className="w-full border border-slate-300 rounded-lg p-2"
+                />
+              </div>
+
+              <div className="pt-3 flex space-x-2">
+                <button type="button" onClick={() => setShowEditReturnModal(false)} className="w-1/2 bg-slate-100 py-2.5 rounded-lg font-semibold">Cancel</button>
+                <button type="submit" className="w-1/2 bg-indigo-600 text-white py-2.5 rounded-lg font-semibold">Update Return</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Advanced Cash Transaction Modal */}
       {showCashModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
@@ -2657,11 +2421,7 @@ export default function App() {
                 <label className="block font-semibold text-slate-700 mb-1">Transaction Flow Type *</label>
                 <select 
                   value={cashFlowType}
-                  onChange={(e) => {
-                    setCashFlowType(e.target.value);
-                    setSelectedPartnerId('');
-                    setSelectedVoucherIds([]);
-                  }}
+                  onChange={(e) => { setCashFlowType(e.target.value); setSelectedPartnerId(''); setSelectedVoucherIds([]); }}
                   className="w-full border border-slate-300 rounded-lg p-2 bg-white"
                 >
                   <option value="COD_IN">1. COD Flow (Delivery Collection - COD In)</option>
@@ -2674,10 +2434,7 @@ export default function App() {
                   <label className="block font-semibold text-slate-700 mb-1">Select Delivery Service *</label>
                   <select 
                     value={selectedPartnerId}
-                    onChange={(e) => {
-                      setSelectedPartnerId(e.target.value);
-                      setSelectedVoucherIds([]);
-                    }}
+                    onChange={(e) => { setSelectedPartnerId(e.target.value); setSelectedVoucherIds([]); }}
                     className="w-full border border-slate-300 rounded-lg p-2 bg-white"
                   >
                     <option value="">-- Choose Delivery Service --</option>
@@ -2689,10 +2446,7 @@ export default function App() {
                   <label className="block font-semibold text-slate-700 mb-1">Select Vendor *</label>
                   <select 
                     value={selectedPartnerId}
-                    onChange={(e) => {
-                      setSelectedPartnerId(e.target.value);
-                      setSelectedVoucherIds([]);
-                    }}
+                    onChange={(e) => { setSelectedPartnerId(e.target.value); setSelectedVoucherIds([]); }}
                     className="w-full border border-slate-300 rounded-lg p-2 bg-white"
                   >
                     <option value="">-- Choose Vendor --</option>
@@ -2701,13 +2455,10 @@ export default function App() {
                 </div>
               )}
 
-              {/* Voucher Selection Table with strict COD flow enforcement */}
               {selectedPartnerId && (
                 <div className="space-y-2">
                   <label className="block font-semibold text-slate-700">
-                    {cashFlowType === 'COD_IN' 
-                      ? 'Select Delivered Vouchers to collect COD:' 
-                      : 'Select Vouchers that have already completed COD Collection (COD_IN done):'}
+                    {cashFlowType === 'COD_IN' ? 'Select Delivered Vouchers to collect COD:' : 'Select Vouchers that have already completed COD Collection (COD_IN done):'}
                   </label>
                   <div className="border rounded-lg max-h-56 overflow-y-auto">
                     <table className="w-full text-left text-xs">
@@ -2715,13 +2466,7 @@ export default function App() {
                         <tr>
                           <th className="p-2.5 w-10 text-center">Select</th>
                           <th className="p-2.5">Order ID & Customer</th>
-                          {cashFlowType === 'VENDOR_OUT' && (
-                            <>
-                              <th className="p-2.5 text-right">COD</th>
-                              <th className="p-2.5 text-right">Handling</th>
-                              <th className="p-2.5 text-right">Store Chg</th>
-                            </>
-                          )}
+                          {cashFlowType === 'VENDOR_OUT' && (<><th className="p-2.5 text-right">COD</th><th className="p-2.5 text-right">Handling</th><th className="p-2.5 text-right">Store Chg</th></>)}
                           <th className="p-2.5 text-right">{cashFlowType === 'COD_IN' ? 'COD Amount' : 'Net Payable'}</th>
                         </tr>
                       </thead>
@@ -2733,23 +2478,8 @@ export default function App() {
                               const isChecked = selectedVoucherIds.includes(ord.id);
                               return (
                                 <tr key={ord.id} className="hover:bg-slate-50">
-                                  <td className="p-2.5 text-center">
-                                    <input 
-                                      type="checkbox"
-                                      checked={isChecked}
-                                      onChange={(e) => {
-                                        if (e.target.checked) {
-                                          setSelectedVoucherIds([...selectedVoucherIds, ord.id]);
-                                        } else {
-                                          setSelectedVoucherIds(selectedVoucherIds.filter(id => id !== ord.id));
-                                        }
-                                      }}
-                                    />
-                                  </td>
-                                  <td className="p-2.5 font-bold text-indigo-600">
-                                    {ord.id}
-                                    <div className="text-[10px] font-normal text-slate-500">{ord.customerName} ({ord.customerPhone})</div>
-                                  </td>
+                                  <td className="p-2.5 text-center"><input type="checkbox" checked={isChecked} onChange={(e) => setSelectedVoucherIds(e.target.checked ? [...selectedVoucherIds, ord.id] : selectedVoucherIds.filter(id => id !== ord.id))} /></td>
+                                  <td className="p-2.5 font-bold text-indigo-600">{ord.id}<div className="text-[10px] font-normal text-slate-500">{ord.customerName} ({ord.customerPhone})</div></td>
                                   <td className="p-2.5 text-right font-semibold">{(Number(ord.totalCod) || 0).toLocaleString()} Ks</td>
                                 </tr>
                               );
@@ -2765,23 +2495,8 @@ export default function App() {
                               const netOrderVal = cod - handling - storeChg;
                               return (
                                 <tr key={ord.id} className="hover:bg-slate-50">
-                                  <td className="p-2.5 text-center">
-                                    <input 
-                                      type="checkbox"
-                                      checked={isChecked}
-                                      onChange={(e) => {
-                                        if (e.target.checked) {
-                                          setSelectedVoucherIds([...selectedVoucherIds, ord.id]);
-                                        } else {
-                                          setSelectedVoucherIds(selectedVoucherIds.filter(id => id !== ord.id));
-                                        }
-                                      }}
-                                    />
-                                  </td>
-                                  <td className="p-2.5 font-bold text-indigo-600">
-                                    {ord.id}
-                                    <div className="text-[10px] font-normal text-slate-500">{ord.customerName}</div>
-                                  </td>
+                                  <td className="p-2.5 text-center"><input type="checkbox" checked={isChecked} onChange={(e) => setSelectedVoucherIds(e.target.checked ? [...selectedVoucherIds, ord.id] : selectedVoucherIds.filter(id => id !== ord.id))} /></td>
+                                  <td className="p-2.5 font-bold text-indigo-600">{ord.id}<div className="text-[10px] font-normal text-slate-500">{ord.customerName}</div></td>
                                   <td className="p-2.5 text-right font-medium">{cod.toLocaleString()}</td>
                                   <td className="p-2.5 text-right text-red-600">-{handling.toLocaleString()}</td>
                                   <td className="p-2.5 text-right text-red-600">-{storeChg.toLocaleString()}</td>
@@ -2793,54 +2508,36 @@ export default function App() {
                       </tbody>
                     </table>
                   </div>
-                  {cashFlowType === 'VENDOR_OUT' && (
-                    <p className="text-[11px] text-amber-600 font-medium">⚠️ Note: Vendor Payout (Vendor Out) လုပ်နိုင်ရန် Delivery ဆီမှ COD အဝင်စာရင်း (COD_IN) အရင်ဆုံး လုပ်ဆောင်ထားပြီးဖြစ်ရပါမည်။</p>
-                  )}
                 </div>
               )}
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Bank / KPay Transaction No. / Ref No. *</label>
-                <input 
-                  type="text" required
-                  value={cashTransactionNo}
-                  onChange={(e) => setCashTransactionNo(e.target.value)}
-                  placeholder="e.g. KPay-TXN-99882233 or Ref No."
-                  className="w-full border border-slate-300 rounded-lg p-2 font-mono"
-                />
+                <input type="text" required value={cashTransactionNo} onChange={(e) => setCashTransactionNo(e.target.value)} placeholder="e.g. KPay-TXN-99882233" className="w-full border border-slate-300 rounded-lg p-2 font-mono" />
               </div>
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Note / Description (Optional)</label>
-                <textarea 
-                  rows={2} value={cashDescription}
-                  onChange={(e) => setCashDescription(e.target.value)}
-                  placeholder="Optional notes for payment transaction..."
-                  className="w-full border border-slate-300 rounded-lg p-2"
-                />
+                <textarea rows={2} value={cashDescription} onChange={(e) => setCashDescription(e.target.value)} placeholder="Optional notes..." className="w-full border border-slate-300 rounded-lg p-2" />
               </div>
 
               <div className="pt-3 flex space-x-2">
                 <button type="button" onClick={() => setShowCashModal(false)} className="w-1/2 bg-slate-100 py-2.5 rounded-lg font-semibold">Cancel</button>
                 <button 
                   type="button" 
-                  onClick={async () => {
+                  onClick={() => {
                     if (!selectedPartnerId || selectedVoucherIds.length === 0) {
                       alert('ကျေးဇူးပြု၍ Partner နှင့် Voucher များကို အနည်းဆုံး တစ်ခု ရွေးချယ်ပါ။');
                       return;
                     }
                     if (!cashTransactionNo.trim()) {
-                      alert('ကျေးဇူးပြု၍ ငွေလွှဲအထောက်အထား Transaction No. ထည့်သွင်းပါ။');
+                      alert('ကျေးဇူးပြု၍ Transaction No. ထည့်သွင်းပါ။');
                       return;
                     }
 
                     let totalAmount = 0;
                     if (cashFlowType === 'COD_IN') {
-                      orders.forEach(o => {
-                        if (selectedVoucherIds.includes(o.id)) {
-                          totalAmount += Number(o.totalCod) || 0;
-                        }
-                      });
+                      orders.forEach(o => { if (selectedVoucherIds.includes(o.id)) totalAmount += Number(o.totalCod) || 0; });
                     } else {
                       orders.forEach(o => {
                         if (selectedVoucherIds.includes(o.id)) {
@@ -2862,19 +2559,9 @@ export default function App() {
                       createdBy: currentUser?.name || 'Staff'
                     };
 
-                    try {
-                      await fetch(`${API_BASE_URL}/api/cash-ledger`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(cObj)
-                      });
-                      setCashLedger([cObj, ...cashLedger]);
-                      setShowCashModal(false);
-                      addLog(`Recorded actual cash payment ${cashFlowType} of ${totalAmount} Ks with Ref: ${cashTransactionNo}`);
-                    } catch (err) {
-                      setCashLedger([cObj, ...cashLedger]);
-                      setShowCashModal(false);
-                    }
+                    setCashLedger([cObj, ...cashLedger]);
+                    setShowCashModal(false);
+                    addLog(`Recorded actual cash payment ${cashFlowType} of ${totalAmount} Ks with Ref: ${cashTransactionNo}`);
                   }}
                   className="w-1/2 bg-indigo-600 text-white py-2.5 rounded-lg font-semibold"
                 >
@@ -2899,51 +2586,20 @@ export default function App() {
             </div>
 
             <div className="space-y-3 text-xs">
-              <p className="text-slate-600">ကျေးဇူးပြု၍ ပစ္စည်းတစ်ခုချင်းစီအလိုက် ပို့ဆောင်နိုင်ခဲ့သော အရေအတွက် (Delivered Qty) နှင့် ပြန်လည်ရောက်ရှိလာသော အရေအတွက် (Returned Qty) ကို စစ်ဆေးအတည်ပြုပါ။</p>
+              <p className="text-slate-600">ကျေးဇူးပြု၍ ပစ္စည်းတစ်ခုချင်းစီအလိုက် Delivered Qty နှင့် Returned Qty ကို စစ်ဆေးအတည်ပြုပါ။</p>
 
               <div className="border rounded-lg overflow-hidden">
                 <table className="w-full text-left text-xs">
                   <thead className="bg-slate-100 text-slate-600 border-b">
-                    <tr>
-                      <th className="p-2.5">Item Name</th>
-                      <th className="p-2.5 text-center">Total Qty</th>
-                      <th className="p-2.5 text-center">Delivered Qty</th>
-                      <th className="p-2.5 text-center">Returned Qty</th>
-                    </tr>
+                    <tr><th className="p-2.5">Item Name</th><th className="p-2.5 text-center">Total Qty</th><th className="p-2.5 text-center">Delivered Qty</th><th className="p-2.5 text-center">Returned Qty</th></tr>
                   </thead>
                   <tbody className="divide-y">
                     {partialItemsForm.map((pIt, idx) => (
                       <tr key={idx} className="hover:bg-slate-50">
                         <td className="p-2.5 font-bold text-slate-800">{pIt.name}</td>
                         <td className="p-2.5 text-center font-semibold">{pIt.totalQty}</td>
-                        <td className="p-2.5 text-center">
-                          <input 
-                            type="number" min="0" max={pIt.totalQty}
-                            value={pIt.deliveredQty}
-                            onChange={(e) => {
-                              const dVal = Number(e.target.value) || 0;
-                              const updated = [...partialItemsForm];
-                              updated[idx].deliveredQty = dVal;
-                              updated[idx].returnedQty = Math.max(0, pIt.totalQty - dVal);
-                              setPartialItemsForm(updated);
-                            }}
-                            className="w-16 border rounded text-center p-1 font-bold text-emerald-600"
-                          />
-                        </td>
-                        <td className="p-2.5 text-center">
-                          <input 
-                            type="number" min="0" max={pIt.totalQty}
-                            value={pIt.returnedQty}
-                            onChange={(e) => {
-                              const rVal = Number(e.target.value) || 0;
-                              const updated = [...partialItemsForm];
-                              updated[idx].returnedQty = rVal;
-                              updated[idx].deliveredQty = Math.max(0, pIt.totalQty - rVal);
-                              setPartialItemsForm(updated);
-                            }}
-                            className="w-16 border rounded text-center p-1 font-bold text-rose-600"
-                          />
-                        </td>
+                        <td className="p-2.5 text-center"><input type="number" min="0" max={pIt.totalQty} value={pIt.deliveredQty} onChange={(e) => { const dVal = Number(e.target.value) || 0; const updated = [...partialItemsForm]; updated[idx].deliveredQty = dVal; updated[idx].returnedQty = Math.max(0, pIt.totalQty - dVal); setPartialItemsForm(updated); }} className="w-16 border rounded text-center p-1 font-bold text-emerald-600" /></td>
+                        <td className="p-2.5 text-center"><input type="number" min="0" max={pIt.totalQty} value={pIt.returnedQty} onChange={(e) => { const rVal = Number(e.target.value) || 0; const updated = [...partialItemsForm]; updated[idx].returnedQty = rVal; updated[idx].deliveredQty = Math.max(0, pIt.totalQty - rVal); setPartialItemsForm(updated); }} className="w-16 border rounded text-center p-1 font-bold text-rose-600" /></td>
                       </tr>
                     ))}
                   </tbody>
@@ -2951,18 +2607,8 @@ export default function App() {
               </div>
 
               <div className="pt-2 flex space-x-2">
-                <button 
-                  onClick={() => setShowPartialModal(false)}
-                  className="w-1/2 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 rounded-lg font-semibold"
-                >
-                  Cancel
-                </button>
-                <button 
-                  onClick={handleConfirmPartialReturn}
-                  className="w-1/2 bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-lg font-semibold shadow-md"
-                >
-                  Confirm & Update
-                </button>
+                <button onClick={() => setShowPartialModal(false)} className="w-1/2 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 rounded-lg font-semibold">Cancel</button>
+                <button onClick={handleConfirmPartialReturn} className="w-1/2 bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-lg font-semibold shadow-md">Confirm & Update</button>
               </div>
             </div>
           </div>
@@ -2984,29 +2630,18 @@ export default function App() {
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Return Quantity *</label>
-                <input 
-                  type="number" min="1" max={targetReturnItem.quantity}
-                  value={returnForm.qty}
-                  onChange={(e) => setReturnForm({ ...returnForm, qty: Number(e.target.value) })}
-                  className="w-full border border-slate-300 rounded-lg p-2"
-                />
+                <input type="number" min="1" max={targetReturnItem.quantity} value={returnForm.qty} onChange={(e) => setReturnForm({ ...returnForm, qty: Number(e.target.value) })} className="w-full border border-slate-300 rounded-lg p-2" />
               </div>
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Reason / Note *</label>
-                <textarea 
-                  rows={2} required
-                  value={returnForm.reason}
-                  onChange={(e) => setReturnForm({ ...returnForm, reason: e.target.value })}
-                  placeholder="e.g. Expired, Damaged packaging, Overstock..."
-                  className="w-full border border-slate-300 rounded-lg p-2"
-                />
+                <textarea rows={2} required value={returnForm.reason} onChange={(e) => setReturnForm({ ...returnForm, reason: e.target.value })} placeholder="e.g. Expired, Damaged..." className="w-full border border-slate-300 rounded-lg p-2" />
               </div>
 
               <div className="pt-3 flex space-x-2">
                 <button onClick={() => setShowReturnModal(false)} className="w-1/2 bg-slate-100 py-2.5 rounded-lg font-semibold">Cancel</button>
                 <button 
-                  onClick={async () => {
+                  onClick={() => {
                     const numQty = Number(returnForm.qty);
                     if (numQty <= 0 || numQty > targetReturnItem.quantity) {
                       alert('အရေအတွက် မှားယွင်းနေပါသည်။');
@@ -3025,25 +2660,11 @@ export default function App() {
                       date: new Date().toLocaleDateString()
                     };
 
-                    try {
-                      await fetch(`${API_BASE_URL}/api/returns`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(newReturnObj)
-                      });
-
-                      const newQty = Math.max(0, (Number(targetReturnItem.quantity) || 0) - numQty);
-                      await fetch(`${API_BASE_URL}/api/items/${targetReturnItem.id}`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ quantity: newQty })
-                      });
-
-                      setItems(prev => prev.map(i => i.id === targetReturnItem.id ? { ...i, quantity: newQty } : i));
-                      setReturns(prev => [newReturnObj, ...prev]);
-                      addLog(`Returned ${numQty} pcs of ${targetReturnItem.name} to Vendor. Reason: ${returnForm.reason}`);
-                      setShowReturnModal(false);
-                    } catch (err) {}
+                    const newQty = Math.max(0, (Number(targetReturnItem.quantity) || 0) - numQty);
+                    setItems(prev => prev.map(i => i.id === targetReturnItem.id ? { ...i, quantity: newQty } : i));
+                    setReturns(prev => [newReturnObj, ...prev]);
+                    addLog(`Returned ${numQty} pcs of ${targetReturnItem.name} to Vendor. Reason: ${returnForm.reason}`);
+                    setShowReturnModal(false);
                   }}
                   className="w-1/2 bg-rose-600 hover:bg-rose-700 text-white py-2.5 rounded-lg font-semibold"
                 >
@@ -3067,12 +2688,7 @@ export default function App() {
             <form onSubmit={handleCreateOrder} className="space-y-3 text-xs">
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Select Vendor *</label>
-                <select 
-                  required
-                  value={newOrder.vendorId}
-                  onChange={(e) => setNewOrder({ ...newOrder, vendorId: e.target.value })}
-                  className="w-full border border-slate-300 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
+                <select required value={newOrder.vendorId} onChange={(e) => setNewOrder({ ...newOrder, vendorId: e.target.value })} className="w-full border border-slate-300 rounded-lg p-2">
                   <option value="">-- Choose Vendor --</option>
                   {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
                 </select>
@@ -3080,54 +2696,30 @@ export default function App() {
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Customer Phone (Auto-memory) *</label>
-                  <input 
-                    type="text" required placeholder="09xxxxxxxxx"
-                    value={newOrder.customerPhone}
-                    onChange={(e) => handleCustomerPhoneChange(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg p-2"
-                  />
+                  <label className="block font-semibold text-slate-700 mb-1">Customer Phone *</label>
+                  <input type="text" required placeholder="09xxxxxxxxx" value={newOrder.customerPhone} onChange={(e) => handleCustomerPhoneChange(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2" />
                 </div>
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">Customer Name *</label>
-                  <input 
-                    type="text" required placeholder="Customer Name"
-                    value={newOrder.customerName}
-                    onChange={(e) => setNewOrder({ ...newOrder, customerName: e.target.value })}
-                    className="w-full border border-slate-300 rounded-lg p-2"
-                  />
+                  <input type="text" required placeholder="Name" value={newOrder.customerName} onChange={(e) => setNewOrder({ ...newOrder, customerName: e.target.value })} className="w-full border border-slate-300 rounded-lg p-2" />
                 </div>
               </div>
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Delivery Address *</label>
-                <textarea 
-                  required rows={2} placeholder="Full address"
-                  value={newOrder.deliveryAddress}
-                  onChange={(e) => setNewOrder({ ...newOrder, deliveryAddress: e.target.value })}
-                  className="w-full border border-slate-300 rounded-lg p-2"
-                />
+                <textarea required rows={2} placeholder="Full address" value={newOrder.deliveryAddress} onChange={(e) => setNewOrder({ ...newOrder, deliveryAddress: e.target.value })} className="w-full border border-slate-300 rounded-lg p-2" />
               </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">Delivery Service</label>
-                  <select 
-                    value={newOrder.deliveryService}
-                    onChange={(e) => setNewOrder({ ...newOrder, deliveryService: e.target.value })}
-                    className="w-full border border-slate-300 rounded-lg p-2"
-                  >
+                  <select value={newOrder.deliveryService} onChange={(e) => setNewOrder({ ...newOrder, deliveryService: e.target.value })} className="w-full border border-slate-300 rounded-lg p-2">
                     {deliveries.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">Delivery Fee (Ks)</label>
-                  <input 
-                    type="number"
-                    value={newOrder.deliveryFee}
-                    onChange={(e) => setNewOrder({ ...newOrder, deliveryFee: Number(e.target.value) })}
-                    className="w-full border border-slate-300 rounded-lg p-2"
-                  />
+                  <input type="number" value={newOrder.deliveryFee} onChange={(e) => setNewOrder({ ...newOrder, deliveryFee: Number(e.target.value) })} className="w-full border border-slate-300 rounded-lg p-2" />
                 </div>
               </div>
 
@@ -3135,60 +2727,19 @@ export default function App() {
                 <label className="block font-semibold text-slate-700">Select Item Stock</label>
                 {newOrder.items.map((it, idx) => (
                   <div key={idx} className="grid grid-cols-3 gap-2 bg-slate-50 p-2 rounded-lg">
-                    <select 
-                      required
-                      value={it.itemId}
-                      onChange={(e) => {
-                        const updated = [...newOrder.items];
-                        updated[idx].itemId = e.target.value;
-                        setNewOrder({ ...newOrder, items: updated });
-                      }}
-                      className="border border-slate-300 rounded p-1.5 col-span-1"
-                    >
+                    <select required value={it.itemId} onChange={(e) => { const updated = [...newOrder.items]; updated[idx].itemId = e.target.value; setNewOrder({ ...newOrder, items: updated }); }} className="border border-slate-300 rounded p-1.5 col-span-1">
                       <option value="">-- Select Item --</option>
-                      {items.filter(i => !newOrder.vendorId || i.vendorId === newOrder.vendorId).map(i => (
-                        <option key={i.id} value={i.id}>{i.name} ({i.quantity} left)</option>
-                      ))}
+                      {items.filter(i => !newOrder.vendorId || i.vendorId === newOrder.vendorId).map(i => (<option key={i.id} value={i.id}>{i.name} ({i.quantity} left)</option>))}
                     </select>
-
-                    <input 
-                      type="number" placeholder="Qty" min="1" required
-                      value={it.qty}
-                      onChange={(e) => {
-                        const updated = [...newOrder.items];
-                        updated[idx].qty = Number(e.target.value);
-                        setNewOrder({ ...newOrder, items: updated });
-                      }}
-                      className="border border-slate-300 rounded p-1.5"
-                    />
-
-                    <input 
-                      type="number" placeholder="Discount (Ks)"
-                      value={it.discount}
-                      onChange={(e) => {
-                        const updated = [...newOrder.items];
-                        updated[idx].discount = Number(e.target.value);
-                        setNewOrder({ ...newOrder, items: updated });
-                      }}
-                      className="border border-slate-300 rounded p-1.5"
-                    />
+                    <input type="number" placeholder="Qty" min="1" required value={it.qty} onChange={(e) => { const updated = [...newOrder.items]; updated[idx].qty = Number(e.target.value); setNewOrder({ ...newOrder, items: updated }); }} className="border border-slate-300 rounded p-1.5" />
+                    <input type="number" placeholder="Discount (Ks)" value={it.discount} onChange={(e) => { const updated = [...newOrder.items]; updated[idx].discount = Number(e.target.value); setNewOrder({ ...newOrder, items: updated }); }} className="border border-slate-300 rounded p-1.5" />
                   </div>
                 ))}
               </div>
 
               <div className="pt-3 flex space-x-2">
-                <button 
-                  type="button" onClick={() => setShowOrderModal(false)}
-                  className="w-1/2 bg-slate-100 text-slate-700 py-2.5 rounded-lg font-semibold"
-                >
-                  Cancel
-                </button>
-                <button 
-                  type="submit"
-                  className="w-1/2 bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-lg font-semibold shadow-md"
-                >
-                  Save & Print Voucher
-                </button>
+                <button type="button" onClick={() => setShowOrderModal(false)} className="w-1/2 bg-slate-100 text-slate-700 py-2.5 rounded-lg font-semibold">Cancel</button>
+                <button type="submit" className="w-1/2 bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-lg font-semibold shadow-md">Save & Print Voucher</button>
               </div>
             </form>
           </div>
@@ -3205,23 +2756,11 @@ export default function App() {
             </div>
 
             <div className="flex bg-slate-100 p-1 rounded-lg text-xs font-semibold">
-              <button 
-                type="button"
-                onClick={() => setIsExistingItemMode(true)}
-                className={`flex-1 py-1.5 rounded-md transition-all ${isExistingItemMode ? 'bg-white shadow text-indigo-600' : 'text-slate-600'}`}
-              >
-                Existing Item (Restock Batch)
-              </button>
-              <button 
-                type="button"
-                onClick={() => setIsExistingItemMode(false)}
-                className={`flex-1 py-1.5 rounded-md transition-all ${!isExistingItemMode ? 'bg-white shadow text-indigo-600' : 'text-slate-600'}`}
-              >
-                Brand New Item
-              </button>
+              <button type="button" onClick={() => setIsExistingItemMode(true)} className={`flex-1 py-1.5 rounded-md transition-all ${isExistingItemMode ? 'bg-white shadow text-indigo-600' : 'text-slate-600'}`}>Existing Item (Restock)</button>
+              <button type="button" onClick={() => setIsExistingItemMode(false)} className={`flex-1 py-1.5 rounded-md transition-all ${!isExistingItemMode ? 'bg-white shadow text-indigo-600' : 'text-slate-600'}`}>Brand New Item</button>
             </div>
 
-            <form onSubmit={async (e) => {
+            <form onSubmit={(e) => {
               e.preventDefault();
               const todayStr = new Date().toISOString().split('T')[0];
 
@@ -3232,7 +2771,6 @@ export default function App() {
                   return;
                 }
                 const addQty = Number(newItem.quantity) || 0;
-                
                 const newBatchItem = {
                   id: `ITM-${Date.now().toString().slice(-4)}-${Math.floor(Math.random()*100)}`,
                   vendorId: targetExisting.vendorId,
@@ -3248,20 +2786,9 @@ export default function App() {
                   storeChargePerDay: targetExisting.storeChargePerDay,
                   freeDays: targetExisting.freeDays
                 };
-
-                try {
-                  await fetch(`${API_BASE_URL}/api/items`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(newBatchItem)
-                  });
-                  setItems([newBatchItem, ...items]);
-                  addLog(`Added restock batch of ${addQty} pcs for ${targetExisting.name} with date ${todayStr}`);
-                  setShowItemModal(false);
-                } catch (err) {
-                  setItems([newBatchItem, ...items]);
-                  setShowItemModal(false);
-                }
+                setItems([newBatchItem, ...items]);
+                addLog(`Added restock batch of ${addQty} pcs for ${targetExisting.name}`);
+                setShowItemModal(false);
               } else {
                 if (!newItem.vendorId || !newItem.name) {
                   alert('Vendor နှင့် ပစ္စည်းနာမည် ထည့်ရန် လိုအပ်ပါသည်။');
@@ -3285,30 +2812,15 @@ export default function App() {
                   storeChargePerDay: Number(newItem.storeChargePerDay) || 30,
                   freeDays: Number(newItem.freeDays) || 7
                 };
-
-                try {
-                  await fetch(`${API_BASE_URL}/api/items`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(itemObj)
-                  });
-                  setItems([itemObj, ...items]);
-                  addLog(`Added new stock item ${itemObj.name} with date ${todayStr} and SKU ${autoSku}`);
-                  setShowItemModal(false);
-                } catch (err) {
-                  setItems([itemObj, ...items]);
-                  setShowItemModal(false);
-                }
+                setItems([itemObj, ...items]);
+                addLog(`Added new stock item ${itemObj.name} with date ${todayStr}`);
+                setShowItemModal(false);
               }
             }} className="space-y-3 text-xs">
               
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Select Vendor (Dropdown) *</label>
-                <select 
-                  required value={newItem.vendorId}
-                  onChange={(e) => setNewItem({ ...newItem, vendorId: e.target.value, existingItemId: '' })}
-                  className="w-full border border-slate-300 rounded-lg p-2 bg-white"
-                >
+                <label className="block font-semibold text-slate-700 mb-1">Select Vendor *</label>
+                <select required value={newItem.vendorId} onChange={(e) => setNewItem({ ...newItem, vendorId: e.target.value, existingItemId: '' })} className="w-full border border-slate-300 rounded-lg p-2 bg-white">
                   <option value="">-- Choose Vendor --</option>
                   {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
                 </select>
@@ -3317,69 +2829,37 @@ export default function App() {
               {isExistingItemMode ? (
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">Select Existing Item *</label>
-                  <select 
-                    required value={newItem.existingItemId}
-                    onChange={(e) => {
-                      const selectedId = e.target.value;
-                      const found = items.find(i => i.id === selectedId);
-                      setNewItem({ 
-                        ...newItem, 
-                        existingItemId: selectedId,
-                        price: found ? found.price : ''
-                      });
-                    }}
-                    className="w-full border border-slate-300 rounded-lg p-2 bg-white"
-                  >
+                  <select required value={newItem.existingItemId} onChange={(e) => { const selectedId = e.target.value; const found = items.find(i => i.id === selectedId); setNewItem({ ...newItem, existingItemId: selectedId, price: found ? found.price : '' }); }} className="w-full border border-slate-300 rounded-lg p-2 bg-white">
                     <option value="">-- Choose Item Stock --</option>
-                    {items
-                      .filter(i => newItem.vendorId && i.vendorId === newItem.vendorId)
-                      .map(i => <option key={i.id} value={i.id}>{i.name} (Batch Date: {i.stockInDate})</option>)}
+                    {items.filter(i => newItem.vendorId && i.vendorId === newItem.vendorId).map(i => <option key={i.id} value={i.id}>{i.name} (Batch Date: {i.stockInDate})</option>)}
                   </select>
                 </div>
               ) : (
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">New Item Name *</label>
-                  <input 
-                    type="text" required value={newItem.name}
-                    onChange={(e) => setNewItem({ ...newItem, name: e.target.value })}
-                    className="w-full border border-slate-300 rounded-lg p-2"
-                  />
+                  <input type="text" required value={newItem.name} onChange={(e) => setNewItem({ ...newItem, name: e.target.value })} className="w-full border border-slate-300 rounded-lg p-2" />
                 </div>
               )}
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Selling Price (Ks) *</label>
-                <input 
-                  type="number" required value={newItem.price}
-                  onChange={(e) => setNewItem({ ...newItem, price: e.target.value })}
-                  className="w-full border border-slate-300 rounded-lg p-2"
-                />
+                <input type="number" required value={newItem.price} onChange={(e) => setNewItem({ ...newItem, price: e.target.value })} className="w-full border border-slate-300 rounded-lg p-2" />
               </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">{isExistingItemMode ? 'Restock Quantity *' : 'Initial Quantity *'}</label>
-                  <input 
-                    type="number" required value={newItem.quantity}
-                    onChange={(e) => setNewItem({ ...newItem, quantity: e.target.value })}
-                    className="w-full border border-slate-300 rounded-lg p-2"
-                  />
+                  <input type="number" required value={newItem.quantity} onChange={(e) => setNewItem({ ...newItem, quantity: e.target.value })} className="w-full border border-slate-300 rounded-lg p-2" />
                 </div>
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">Handling Fee (Ks)</label>
-                  <input 
-                    type="number" value={newItem.handlingFee}
-                    onChange={(e) => setNewItem({ ...newItem, handlingFee: e.target.value })}
-                    className="w-full border border-slate-300 rounded-lg p-2"
-                  />
+                  <input type="number" value={newItem.handlingFee} onChange={(e) => setNewItem({ ...newItem, handlingFee: e.target.value })} className="w-full border border-slate-300 rounded-lg p-2" />
                 </div>
               </div>
 
               <div className="pt-3 flex space-x-2">
                 <button type="button" onClick={() => setShowItemModal(false)} className="w-1/2 bg-slate-100 py-2.5 rounded-lg font-semibold">Cancel</button>
-                <button type="submit" className="w-1/2 bg-indigo-600 text-white py-2.5 rounded-lg font-semibold">
-                  {isExistingItemMode ? 'Confirm Restock Batch' : 'Stock-In & Auto SKU'}
-                </button>
+                <button type="submit" className="w-1/2 bg-indigo-600 text-white py-2.5 rounded-lg font-semibold">{isExistingItemMode ? 'Confirm Restock' : 'Stock-In & SKU'}</button>
               </div>
             </form>
           </div>
@@ -3398,43 +2878,23 @@ export default function App() {
             <form onSubmit={handleSaveVendor} className="space-y-3 text-xs">
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Vendor Shop Name *</label>
-                <input 
-                  type="text" required value={newVendor.name}
-                  onChange={(e) => setNewVendor({ ...newVendor, name: e.target.value })}
-                  placeholder="e.g. Trendy Beauty Shop"
-                  className="w-full border border-slate-300 rounded-lg p-2"
-                />
+                <input type="text" required value={newVendor.name} onChange={(e) => setNewVendor({ ...newVendor, name: e.target.value })} className="w-full border border-slate-300 rounded-lg p-2" />
               </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">Phone Number *</label>
-                  <input 
-                    type="text" required value={newVendor.phone}
-                    onChange={(e) => setNewVendor({ ...newVendor, phone: e.target.value })}
-                    placeholder="09xxxxxxxxx"
-                    className="w-full border border-slate-300 rounded-lg p-2"
-                  />
+                  <input type="text" required value={newVendor.phone} onChange={(e) => setNewVendor({ ...newVendor, phone: e.target.value })} className="w-full border border-slate-300 rounded-lg p-2" />
                 </div>
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">Bank / KPay Account *</label>
-                  <input 
-                    type="text" required value={newVendor.bankAccount}
-                    onChange={(e) => setNewVendor({ ...newVendor, bankAccount: e.target.value })}
-                    placeholder="KBZPay: 09..."
-                    className="w-full border border-slate-300 rounded-lg p-2"
-                  />
+                  <input type="text" required value={newVendor.bankAccount} onChange={(e) => setNewVendor({ ...newVendor, bankAccount: e.target.value })} className="w-full border border-slate-300 rounded-lg p-2" />
                 </div>
               </div>
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Business Address *</label>
-                <textarea 
-                  required rows={2} value={newVendor.address}
-                  onChange={(e) => setNewVendor({ ...newVendor, address: e.target.value })}
-                  placeholder="Full location address"
-                  className="w-full border border-slate-300 rounded-lg p-2"
-                />
+                <textarea required rows={2} value={newVendor.address} onChange={(e) => setNewVendor({ ...newVendor, address: e.target.value })} className="w-full border border-slate-300 rounded-lg p-2" />
               </div>
 
               <div className="pt-3 flex space-x-2">
@@ -3458,43 +2918,23 @@ export default function App() {
             <form onSubmit={handleSaveDelivery} className="space-y-3 text-xs">
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Delivery Service Name *</label>
-                <input 
-                  type="text" required value={newDelivery.name}
-                  onChange={(e) => setNewDelivery({ ...newDelivery, name: e.target.value })}
-                  placeholder="e.g. Royal Express"
-                  className="w-full border border-slate-300 rounded-lg p-2"
-                />
+                <input type="text" required value={newDelivery.name} onChange={(e) => setNewDelivery({ ...newDelivery, name: e.target.value })} className="w-full border border-slate-300 rounded-lg p-2" />
               </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">Phone Number *</label>
-                  <input 
-                    type="text" required value={newDelivery.phone}
-                    onChange={(e) => setNewDelivery({ ...newDelivery, phone: e.target.value })}
-                    placeholder="09xxxxxxxxx"
-                    className="w-full border border-slate-300 rounded-lg p-2"
-                  />
+                  <input type="text" required value={newDelivery.phone} onChange={(e) => setNewDelivery({ ...newDelivery, phone: e.target.value })} className="w-full border border-slate-300 rounded-lg p-2" />
                 </div>
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">Bank / KPay Account *</label>
-                  <input 
-                    type="text" required value={newDelivery.bankAccount}
-                    onChange={(e) => setNewDelivery({ ...newDelivery, bankAccount: e.target.value })}
-                    placeholder="KBZPay: 09..."
-                    className="w-full border border-slate-300 rounded-lg p-2"
-                  />
+                  <input type="text" required value={newDelivery.bankAccount} onChange={(e) => setNewDelivery({ ...newDelivery, bankAccount: e.target.value })} className="w-full border border-slate-300 rounded-lg p-2" />
                 </div>
               </div>
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Hub Address *</label>
-                <textarea 
-                  required rows={2} value={newDelivery.address}
-                  onChange={(e) => setNewDelivery({ ...newDelivery, address: e.target.value })}
-                  placeholder="Hub location address"
-                  className="w-full border border-slate-300 rounded-lg p-2"
-                />
+                <textarea required rows={2} value={newDelivery.address} onChange={(e) => setNewDelivery({ ...newDelivery, address: e.target.value })} className="w-full border border-slate-300 rounded-lg p-2" />
               </div>
 
               <div className="pt-3 flex space-x-2">
@@ -3510,47 +2950,29 @@ export default function App() {
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
             <div className="flex justify-between items-center border-b pb-3">
-              <h3 className="font-bold text-slate-800 text-base">
-                {editingUser ? 'Edit User Account' : 'Create New System User'}
-              </h3>
+              <h3 className="font-bold text-slate-800 text-base">{editingUser ? 'Edit User Account' : 'Create New System User'}</h3>
               <button onClick={() => setShowUserModal(false)} className="text-slate-400 hover:text-slate-600 text-lg">✕</button>
             </div>
 
             <form onSubmit={handleSaveUser} className="space-y-3 text-xs">
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Username *</label>
-                <input 
-                  type="text" required value={newUser.username}
-                  onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
-                  className="w-full border border-slate-300 rounded-lg p-2"
-                />
+                <input type="text" required value={newUser.username} onChange={(e) => setNewUser({ ...newUser, username: e.target.value })} className="w-full border border-slate-300 rounded-lg p-2" />
               </div>
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Password {editingUser && '(Leave blank to keep current)'}</label>
-                <input 
-                  type="password" value={newUser.password}
-                  onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                  className="w-full border border-slate-300 rounded-lg p-2"
-                />
+                <input type="password" value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} className="w-full border border-slate-300 rounded-lg p-2" />
               </div>
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Display Name</label>
-                <input 
-                  type="text" value={newUser.name}
-                  onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
-                  className="w-full border border-slate-300 rounded-lg p-2"
-                />
+                <input type="text" value={newUser.name} onChange={(e) => setNewUser({ ...newUser, name: e.target.value })} className="w-full border border-slate-300 rounded-lg p-2" />
               </div>
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Role *</label>
-                <select 
-                  value={newUser.role}
-                  onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
-                  className="w-full border border-slate-300 rounded-lg p-2"
-                >
+                <select value={newUser.role} onChange={(e) => setNewUser({ ...newUser, role: e.target.value })} className="w-full border border-slate-300 rounded-lg p-2">
                   <option value="Admin">Admin (Full Control)</option>
                   <option value="Staff">Staff (Operations)</option>
                   <option value="Vendor">Vendor (View Only)</option>
@@ -3560,11 +2982,7 @@ export default function App() {
               {newUser.role === 'Vendor' && (
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">Associated Vendor</label>
-                  <select 
-                    value={newUser.vendorId}
-                    onChange={(e) => setNewUser({ ...newUser, vendorId: e.target.value })}
-                    className="w-full border border-slate-300 rounded-lg p-2"
-                  >
+                  <select value={newUser.vendorId} onChange={(e) => setNewUser({ ...newUser, vendorId: e.target.value })} className="w-full border border-slate-300 rounded-lg p-2">
                     <option value="">-- Choose Vendor --</option>
                     {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
                   </select>
@@ -3573,9 +2991,7 @@ export default function App() {
 
               <div className="pt-3 flex space-x-2">
                 <button type="button" onClick={() => setShowUserModal(false)} className="w-1/2 bg-slate-100 py-2.5 rounded-lg font-semibold">Cancel</button>
-                <button type="submit" className="w-1/2 bg-indigo-600 text-white py-2.5 rounded-lg font-semibold">
-                  {editingUser ? 'Update User' : 'Create User'}
-                </button>
+                <button type="submit" className="w-1/2 bg-indigo-600 text-white py-2.5 rounded-lg font-semibold">{editingUser ? 'Update User' : 'Create User'}</button>
               </div>
             </form>
           </div>
@@ -3594,10 +3010,7 @@ export default function App() {
 
             <div className="border-b pb-2 space-y-0.5">
               <p className="text-[10px] font-bold uppercase text-slate-400">Sender (Vendor):</p>
-              <p className="font-bold text-slate-800">
-                {vendors.find(v => v.id === selectedOrder.vendorId)?.name || selectedOrder.vendorId}
-              </p>
-              <p className="text-[10px] text-slate-500">Phone: {vendors.find(v => v.id === selectedOrder.vendorId)?.phone}</p>
+              <p className="font-bold text-slate-800">{vendors.find(v => v.id === selectedOrder.vendorId)?.name || selectedOrder.vendorId}</p>
             </div>
 
             <div className="border-b pb-2 space-y-0.5">
@@ -3610,62 +3023,30 @@ export default function App() {
             <div className="border-b pb-2">
               <table className="w-full text-left text-[11px]">
                 <thead>
-                  <tr className="border-b text-slate-400">
-                    <th className="py-1">Item</th>
-                    <th className="py-1 text-center">Qty</th>
-                    <th className="py-1 text-right">Amount</th>
-                  </tr>
+                  <tr className="border-b text-slate-400"><th className="py-1">Item</th><th className="py-1 text-center">Qty</th><th className="py-1 text-right">Amount</th></tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {selectedOrder.items.map((it, i) => (
-                    <tr key={i}>
-                      <td className="py-1">{it.name}</td>
-                      <td className="py-1 text-center">{it.qty}</td>
-                      <td className="py-1 text-right">{(((Number(it.price) || 0) - (Number(it.discount) || 0)) * (Number(it.qty) || 1)).toLocaleString()} Ks</td>
-                    </tr>
+                    <tr key={i}><td className="py-1">{it.name}</td><td className="py-1 text-center">{it.qty}</td><td className="py-1 text-right">{(((Number(it.price) || 0) - (Number(it.discount) || 0)) * (Number(it.qty) || 1)).toLocaleString()} Ks</td></tr>
                   ))}
                 </tbody>
               </table>
             </div>
 
             <div className="space-y-1 text-right">
-              <div className="flex justify-between text-slate-500">
-                <span>Items Subtotal:</span>
-                <span>{(Number(selectedOrder.itemTotal) || 0).toLocaleString()} Ks</span>
-              </div>
-              <div className="flex justify-between text-slate-500">
-                <span>Delivery Fee:</span>
-                <span>{(Number(selectedOrder.deliveryFee) || 0).toLocaleString()} Ks</span>
-              </div>
-              <div className="flex justify-between font-extrabold text-sm text-slate-900 border-t pt-1">
-                <span>Total COD to Pay:</span>
-                <span className="text-indigo-600">{(Number(selectedOrder.totalCod) || 0).toLocaleString()} Ks</span>
-              </div>
+              <div className="flex justify-between text-slate-500"><span>Items Subtotal:</span><span>{(Number(selectedOrder.itemTotal) || 0).toLocaleString()} Ks</span></div>
+              <div className="flex justify-between text-slate-500"><span>Delivery Fee:</span><span>{(Number(selectedOrder.deliveryFee) || 0).toLocaleString()} Ks</span></div>
+              <div className="flex justify-between font-extrabold text-sm text-slate-900 border-t pt-1"><span>Total COD to Pay:</span><span className="text-indigo-600">{(Number(selectedOrder.totalCod) || 0).toLocaleString()} Ks</span></div>
             </div>
 
             <div className="pt-3 border-t text-center space-y-1">
-              <p className="text-[9px] text-slate-400 tracking-wider uppercase font-semibold">
-                Supported by T&N Fulfillment Services
-              </p>
-              <p className="text-[8px] text-slate-300">Thank you for shopping with us!</p>
+              <p className="text-[9px] text-slate-400 tracking-wider uppercase font-semibold">Supported by T&N Fulfillment Services</p>
             </div>
 
             <div className="pt-2 flex space-x-2">
-              <button 
-                onClick={() => setShowVoucherModal(false)}
-                className="w-1/2 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 rounded font-sans font-semibold text-xs"
-              >
-                Close
-              </button>
-              <button 
-                onClick={() => {
-                  window.print();
-                  addLog(`Printed voucher for ${selectedOrder.id}`);
-                }}
-                className="w-1/2 bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded font-sans font-semibold text-xs flex items-center justify-center space-x-1"
-              >
-                <Printer className="w-3.5 h-3.5" />
-                <span>Print Voucher</span>
+              <button onClick={() => setShowVoucherModal(false)} className="w-1/2 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 rounded font-sans font-semibold text-xs">Close</button>
+              <button onClick={() => { window.print(); addLog(`Printed voucher for ${selectedOrder.id}`); }} className="w-1/2 bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded font-sans font-semibold text-xs flex items-center justify-center space-x-1">
+                <Printer className="w-3.5 h-3.5" /><span>Print Voucher</span>
               </button>
             </div>
 
