@@ -65,23 +65,6 @@ export default function App() {
   const [showReturnModal, setShowReturnModal] = useState(false);
   const [showCashModal, setShowCashModal] = useState(false);
 
-  // Edit Inventory
-  const [showEditItemModal, setShowEditItemModal] = useState(false);
-  const [editingInventoryItem, setEditingInventoryItem] = useState(null);
-  const [editInventoryForm, setEditInventoryForm] = useState({ name: '', category: '', price: 0, quantity: 0 });
-
-  // Edit Return
-  const [showEditReturnModal, setShowEditReturnModal] = useState(false);
-  const [editingReturnItem, setEditingReturnItem] = useState(null);
-  const [editReturnForm, setEditReturnForm] = useState({ itemName: '', qty: 1, reason: '' });
-
-  // Cash Modal State
-  const [cashFlowType, setCashFlowType] = useState('COD_IN');
-  const [selectedPartnerId, setSelectedPartnerId] = useState('');
-  const [selectedVoucherIds, setSelectedVoucherIds] = useState([]);
-  const [cashTransactionNo, setCashTransactionNo] = useState('');
-  const [cashDescription, setCashDescription] = useState('');
-
   // Partial Modal
   const [showPartialModal, setShowPartialModal] = useState(false);
   const [targetPartialOrder, setTargetPartialOrder] = useState(null);
@@ -232,37 +215,41 @@ export default function App() {
     return res;
   }, [returns, currentUser]);
 
+  // 1. Partial Return Delete Protection & Delete Voucher Logic with Stock Restore
   const handleDeleteVoucher = async (orderId) => {
     if (codCollectedVoucherIds.has(orderId)) {
       alert('ဤ Voucher သည် COD ငွေအဝင်စာရင်း ပြီးစီးပြီးဖြစ်သဖြင့် ဖျက်၍မရပါ။');
       return;
     }
     const targetOrder = orders.find(o => o.id === orderId);
-    if (targetOrder?.status === 'Partial Return') {
-      alert('Partial Return ဖြစ်နေသော Voucher များကို ဖျက်၍မရပါ။');
+    if (!targetOrder) return;
+
+    if (targetOrder.status === 'Partial Return') {
+      alert('Partial Return ဖြစ်နေသော Voucher များကို ဖျက်၍မရပါ။ ပစ္စည်းအချို့ Delivered ဖြစ်ပြီးသားဖြစ်လို့ Voucher ဆက်လက် အလုပ်လုပ်နေဆဲ ဖြစ်ပါသည်။');
       return;
     }
+
     if (currentUser?.role !== 'Admin') {
       alert('ခွင့်ပြုချက်မရှိပါ: Admin သာ ဖျက်ပိုင်ခွင့်ရှိပါသည်။');
       return;
     }
 
-    if (confirm(`Voucher ${orderId} ကို ဖျက်ပစ်မည် သေချာပါသလား?`)) {
-      if (targetOrder) {
-        for (const ordItem of targetOrder.items) {
-          const stockItem = items.find(i => i.id === ordItem.itemId);
-          if (stockItem) {
-            setItems(prev => prev.map(i => i.id === stockItem.id ? { ...i, quantity: (i.quantity || 0) + (ordItem.qty || 0) } : i));
-          }
+    if (confirm(`Voucher ${orderId} ကို ဖျက်ပစ်မည် သေချာပါသလား? (Cancel/Return ဖြစ်နေသော Stock Qty များ သက်ဆိုင်ရာနေရာသို့ ပြန်လည်ရောက်ရှိမည်)`)) {
+      // Restore stock items
+      for (const ordItem of targetOrder.items) {
+        const stockItem = items.find(i => i.id === ordItem.itemId);
+        if (stockItem) {
+          setItems(prev => prev.map(i => i.id === stockItem.id ? { ...i, quantity: (i.quantity || 0) + (ordItem.qty || 0) } : i));
         }
       }
 
       setReturns(prev => prev.filter(r => r.orderId !== orderId));
       setOrders(prev => prev.filter(o => o.id !== orderId));
-      addLog(`Deleted Voucher ${orderId}`);
+      addLog(`Deleted Voucher ${orderId} and restored inventory stock`);
     }
   };
 
+  // 2. Status Change Auto-Sync & Delivery Return / Partial Return Logic
   const handleUpdateOrderStatus = async (orderId, newStatus) => {
     const targetOrder = orders.find(o => o.id === orderId);
     if (!targetOrder) return;
@@ -272,12 +259,20 @@ export default function App() {
       return;
     }
 
+    if (targetOrder.status === 'Delivered' && newStatus === 'Delivery Return') {
+      alert('Delivered ဖြစ်သွားပြီးသား Voucher ဖြစ်သဖြင့် Return သို့ ပြောင်းလဲ၍မရပါ။');
+      return;
+    }
+
     const wasReturn = targetOrder.status === 'Delivery Return' || targetOrder.status === 'Partial Return';
     const isNowActive = newStatus === 'Pending' || newStatus === 'In-Transit' || newStatus === 'Delivered';
 
+    // When status changes from Return to Pending / In-Transit (Voucher Active again): Clean up return records & adjust inventory stock
     if (wasReturn && isNowActive) {
       setReturns(prev => prev.filter(r => r.orderId !== orderId));
-      addLog(`Synchronized: Removed return records for ${orderId} as status changed back to ${newStatus}`);
+      // Remove return batch items if any created for this order
+      setItems(prev => prev.filter(i => i.orderId !== orderId));
+      addLog(`Synchronized: Removed return records and adjusted stock for ${orderId} as status changed back to ${newStatus}`);
     }
 
     if (newStatus === 'Partial Return') {
@@ -298,6 +293,68 @@ export default function App() {
     const updatedOrder = { ...targetOrder, status: newStatus };
     setOrders(prev => prev.map(o => o.id === orderId ? updatedOrder : o));
     addLog(`Updated Order ${orderId} status to ${newStatus}`);
+  };
+
+  const handleConfirmPartialReturn = async () => {
+    if (!targetPartialOrder) return;
+
+    let newItemTotal = 0;
+    const updatedOrderItems = [];
+
+    for (const pItem of partialItemsForm) {
+      const deliveredQ = Number(pItem.deliveredQty) || 0;
+      const returnedQ = Number(pItem.returnedQty) || 0;
+
+      if (deliveredQ + returnedQ !== pItem.totalQty) {
+        alert(`ပစ္စည်း "${pItem.name}" ၏ Delivered နှင့် Returned ပေါင်းစုအရေအတွက်သည် စုစုပေါင်းအရေအတွက် (${pItem.totalQty}) နှင့် ကိုက်ညီရပါမည်။`);
+        return;
+      }
+
+      if (deliveredQ > 0) {
+        newItemTotal += ((Number(pItem.price) || 0) - (Number(pItem.discount) || 0)) * deliveredQ;
+        updatedOrderItems.push({
+          itemId: pItem.itemId,
+          name: pItem.name,
+          qty: deliveredQ,
+          price: pItem.price,
+          discount: pItem.discount,
+          status: 'Delivered'
+        });
+      }
+
+      if (returnedQ > 0) {
+        const retObj = {
+          id: `RET-${Date.now().toString().slice(-3)}-${Math.floor(Math.random()*100)}`,
+          orderId: targetPartialOrder.id,
+          itemId: pItem.itemId,
+          vendorId: targetPartialOrder.vendorId,
+          itemName: `${pItem.name} (${returnedQ} pcs)`,
+          qty: returnedQ,
+          type: 'Partial Return',
+          reason: 'Customer Refused / Partial Delivery Return',
+          status: 'In Warehouse',
+          date: new Date().toLocaleDateString()
+        };
+        setReturns(prev => [retObj, ...prev]);
+      }
+    }
+
+    const newTotalCod = newItemTotal + (Number(targetPartialOrder.deliveryFee) || 0);
+
+    const updatedFields = {
+      ...targetPartialOrder,
+      status: 'Partial Return',
+      items: updatedOrderItems.length > 0 ? updatedOrderItems : targetPartialOrder.items,
+      itemTotal: newItemTotal,
+      totalCod: newTotalCod,
+      codCollected: true,
+      updatedBy: currentUser?.name || 'Staff'
+    };
+
+    setOrders(prev => prev.map(o => o.id === targetPartialOrder.id ? { ...o, ...updatedFields } : o));
+    addLog(`Processed Partial Return for Order ${targetPartialOrder.id}`);
+    setShowPartialModal(false);
+    setTargetPartialOrder(null);
   };
 
   if (!currentUser) {
@@ -517,6 +574,48 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* Partial Return Confirmation Modal */}
+      {showPartialModal && targetPartialOrder && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+            <div className="flex justify-between items-center border-b pb-3">
+              <div>
+                <h3 className="font-bold text-slate-800 text-sm">Partial Return Confirmation</h3>
+                <p className="text-[11px] text-slate-500">Order ID: {targetPartialOrder.id} ({targetPartialOrder.customerName})</p>
+              </div>
+              <button onClick={() => setShowPartialModal(false)} className="text-slate-400 hover:text-slate-600 text-lg">✕</button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <p className="text-slate-600">ကျေးဇူးပြု၍ ပစ္စည်းတစ်ခုချင်းစီအလိုက် Delivered Qty နှင့် Returned Qty ကို စစ်ဆေးအတည်ပြုပါ။</p>
+
+              <div className="border rounded-lg overflow-hidden">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-100 text-slate-600 border-b">
+                    <tr><th className="p-2.5">Item Name</th><th className="p-2.5 text-center">Total Qty</th><th className="p-2.5 text-center">Delivered Qty</th><th className="p-2.5 text-center">Returned Qty</th></tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {partialItemsForm.map((pIt, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50">
+                        <td className="p-2.5 font-bold text-slate-800">{pIt.name}</td>
+                        <td className="p-2.5 text-center font-semibold">{pIt.totalQty}</td>
+                        <td className="p-2.5 text-center"><input type="number" min="0" max={pIt.totalQty} value={pIt.deliveredQty} onChange={(e) => { const dVal = Number(e.target.value) || 0; const updated = [...partialItemsForm]; updated[idx].deliveredQty = dVal; updated[idx].returnedQty = Math.max(0, pIt.totalQty - dVal); setPartialItemsForm(updated); }} className="w-16 border rounded text-center p-1 font-bold text-emerald-600" /></td>
+                        <td className="p-2.5 text-center"><input type="number" min="0" max={pIt.totalQty} value={pIt.returnedQty} onChange={(e) => { const rVal = Number(e.target.value) || 0; const updated = [...partialItemsForm]; updated[idx].returnedQty = rVal; updated[idx].deliveredQty = Math.max(0, pIt.totalQty - rVal); setPartialItemsForm(updated); }} className="w-16 border rounded text-center p-1 font-bold text-rose-600" /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="pt-2 flex space-x-2">
+                <button onClick={() => setShowPartialModal(false)} className="w-1/2 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 rounded-lg font-semibold">Cancel</button>
+                <button onClick={handleConfirmPartialReturn} className="w-1/2 bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-lg font-semibold shadow-md">Confirm & Update</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showVoucherModal && selectedOrder && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:p-0 print:bg-white">
