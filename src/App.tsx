@@ -890,11 +890,68 @@ export default function App() {
       return;
     }
 
+    const prevStatus = targetOrder.status;
     const isDelivered = newStatus === 'Delivered';
     const isCancelled = newStatus === 'Cancelled';
     const isDeliveryReturn = newStatus === 'Delivery Return';
 
-    // Restore stock to inventory if order is CANCELLED
+    // 1. If previously Delivery Return and now changing away from Delivery Return -> Rollback return stock & return record
+    if (prevStatus === 'Delivery Return' && !isDeliveryReturn) {
+      setItems(prev => prev.filter(i => i.orderId !== orderId));
+      setReturns(prev => prev.filter(r => r.orderId !== orderId));
+      addLog(`Reverted Delivery Return for Order ${orderId}: Cleaned up auto-generated return stock and return record.`);
+    }
+
+    // 2. If changing to Delivery Return (and wasn't before) -> Generate return stock batch & return record
+    if (isDeliveryReturn && prevStatus !== 'Delivery Return') {
+      for (const ordItem of targetOrder.items) {
+        const stockItem = items.find(i => i.id === ordItem.itemId);
+        if (stockItem) {
+          const todayStr = new Date().toISOString().split('T')[0];
+          const newBatchItem = {
+            id: `ITM-${Date.now().toString().slice(-4)}-${Math.floor(Math.random()*100)}`,
+            vendorId: targetOrder.vendorId,
+            name: `${stockItem.name} (Returned Batch)`,
+            category: stockItem.category,
+            price: stockItem.price,
+            cost: 0,
+            quantity: ordItem.qty,
+            damagedQty: 0,
+            stockInDate: todayStr,
+            sku: `${stockItem.sku}-RET`,
+            handlingFee: stockItem.handlingFee,
+            storeChargePerDay: stockItem.storeChargePerDay,
+            freeDays: stockItem.freeDays,
+            orderId: targetOrder.id
+          };
+          setItems(prev => [newBatchItem, ...prev]);
+        }
+      }
+
+      const newReturnObj = {
+        id: `RET-${Date.now().toString().slice(-3)}`,
+        orderId: targetOrder.id,
+        itemId: targetOrder.items[0]?.itemId || '',
+        vendorId: targetOrder.vendorId,
+        itemName: targetOrder.items.map(i => `${i.name} (${i.qty} pcs)`).join(', '),
+        qty: targetOrder.items.reduce((sum, i) => sum + (Number(i.qty) || 1), 0),
+        type: 'Delivery Return',
+        reason: 'Customer Refused / Returned from Delivery',
+        status: 'In Warehouse',
+        date: new Date().toLocaleDateString()
+      };
+      try {
+        await fetch(`${API_BASE_URL}/api/returns`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newReturnObj)
+        });
+      } catch (e) {}
+      setReturns(prev => [newReturnObj, ...prev]);
+      addNotification('Delivery Return', `Order ${targetOrder.id} returned from delivery.`, 'return');
+    }
+
+    // Restore stock to inventory if order is newly CANCELLED
     if (isCancelled && !targetOrder.cancelled) {
       for (const ordItem of targetOrder.items) {
         const stockItem = items.find(i => i.id === ordItem.itemId);
@@ -931,53 +988,6 @@ export default function App() {
         body: JSON.stringify(updatedFields)
       }));
     } catch (e) {}
-
-    if (isDeliveryReturn && targetOrder.status !== 'Delivery Return') {
-      for (const ordItem of targetOrder.items) {
-        const stockItem = items.find(i => i.id === ordItem.itemId);
-        if (stockItem) {
-          const todayStr = new Date().toISOString().split('T')[0];
-          const newBatchItem = {
-            id: `ITM-${Date.now().toString().slice(-4)}-${Math.floor(Math.random()*100)}`,
-            vendorId: targetOrder.vendorId,
-            name: `${stockItem.name} (Returned Batch)`,
-            category: stockItem.category,
-            price: stockItem.price,
-            cost: 0,
-            quantity: ordItem.qty,
-            damagedQty: 0,
-            stockInDate: todayStr,
-            sku: `${stockItem.sku}-RET`,
-            handlingFee: stockItem.handlingFee,
-            storeChargePerDay: stockItem.storeChargePerDay,
-            freeDays: stockItem.freeDays
-          };
-          setItems(prev => [newBatchItem, ...prev]);
-        }
-      }
-
-      const newReturnObj = {
-        id: `RET-${Date.now().toString().slice(-3)}`,
-        orderId: targetOrder.id,
-        itemId: targetOrder.items[0]?.itemId || '',
-        vendorId: targetOrder.vendorId,
-        itemName: targetOrder.items.map(i => `${i.name} (${i.qty} pcs)`).join(', '),
-        qty: targetOrder.items.reduce((sum, i) => sum + (Number(i.qty) || 1), 0),
-        type: 'Delivery Return',
-        reason: 'Customer Refused / Returned from Delivery',
-        status: 'In Warehouse',
-        date: new Date().toLocaleDateString()
-      };
-      try {
-        await fetch(`${API_BASE_URL}/api/returns`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(newReturnObj)
-        });
-      } catch (e) {}
-      setReturns(prev => [newReturnObj, ...prev]);
-      addNotification('Delivery Return', `Order ${targetOrder.id} returned from delivery.`, 'return');
-    }
 
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, ...updatedFields } : o));
     addNotification('Order Updated', `Order ${orderId} status changed to ${newStatus}`, 'order');
@@ -1028,7 +1038,8 @@ export default function App() {
             sku: `${stockItem.sku}-PRET`,
             handlingFee: stockItem.handlingFee,
             storeChargePerDay: stockItem.storeChargePerDay,
-            freeDays: stockItem.freeDays
+            freeDays: stockItem.freeDays,
+            orderId: targetPartialOrder.id
           };
           setItems(prev => [newBatchItem, ...prev]);
         }
@@ -1092,12 +1103,19 @@ export default function App() {
       return;
     }
     const targetOrder = orders.find(o => o.id === orderId);
-    if (!targetOrder?.cancelled) {
-      alert('ခွင့်ပြုချက်မရှိပါ: Cancelled ဖြစ်နေသော Voucher များကိုသာ ဖျက်ခွင့်ရှိပါသည်။');
+    if (!targetOrder) return;
+
+    if (targetOrder.status === 'Partial Return') {
+      alert('Partial Return ဖြစ်နေသော Voucher များကို ဖျက်၍မရပါ။ (Active Delivered items များ ရှိနေပါသည်)');
       return;
     }
 
-    if (confirm(`သတိပေးချက်: Cancelled Voucher ${orderId} ကို စနစ်ထဲမှ အပြီးတိုင် ဖျက်ပစ်ရန် သေချာပါသလား?`)) {
+    if (!targetOrder.cancelled && targetOrder.status !== 'Cancelled' && targetOrder.status !== 'Delivery Return') {
+      alert('ခွင့်ပြုချက်မရှိပါ: Cancelled သို့မဟုတ် Delivery Return ဖြစ်နေသော Voucher များကိုသာ ဖျက်ခွင့်ရှိပါသည်။');
+      return;
+    }
+
+    if (confirm(`သတိပေးချက်: Voucher ${orderId} ကို စနစ်ထဲမှ အပြီးတိုင် ဖျက်ပစ်ရန် သေချာပါသလား?`)) {
       try {
         await fetch(`${API_BASE_URL}/api/orders/${orderId}`, { method: 'DELETE' });
       } catch (e) {}
@@ -1690,7 +1708,7 @@ export default function App() {
                             <button onClick={() => { setSelectedOrder(order); setShowVoucherModal(true); }} className="bg-slate-100 hover:bg-slate-200 text-slate-700 p-1.5 rounded text-[11px] font-semibold inline-flex items-center space-x-1">
                               <Printer className="w-3.5 h-3.5" /><span>Voucher</span>
                             </button>
-                            {currentUser.role === 'Admin' && order.cancelled && !isCodDone && (
+                            {currentUser.role === 'Admin' && (order.cancelled || order.status === 'Delivery Return') && order.status !== 'Partial Return' && !isCodDone && (
                               <button onClick={() => handleDeleteVoucher(order.id)} className="bg-rose-50 hover:bg-rose-100 text-rose-700 p-1.5 rounded text-[11px] font-semibold inline-flex items-center space-x-1">
                                 <Trash2 className="w-3.5 h-3.5" /><span>Delete</span>
                               </button>
