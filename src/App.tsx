@@ -1,1510 +1,723 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import {
-Package, ShoppingCart, Truck, DollarSign, Users, FileText,
-RotateCcw, ShieldCheck, Activity, Search, Plus, Edit, Trash2,
-CheckCircle, Clock, AlertTriangle, Eye, Printer, Download, Upload,
-ArrowUpRight, ArrowDownRight, RefreshCw, Lock, UserCheck, Key,
-BarChart2, Filter, ChevronRight, LogOut, FileSpreadsheet, Tag, TrendingUp,
-PieChart, Table, ArrowUpDown, UserPlus, CheckSquare, Square, Bell, HardDrive, Shield, CreditCard, Menu
+import { 
+  Package, ShoppingCart, Truck, DollarSign, Users, 
+  RotateCcw, ShieldCheck, Activity, Search, Plus, Trash2, 
+  Clock, AlertTriangle, Printer, Download, Upload,
+  ChevronRight, LogOut, FileSpreadsheet, Tag,
+  BarChart2, UserPlus, Bell, CreditCard, Menu
 } from 'lucide-react';
 
 const API_BASE_URL = 'https://tn-backend-j1vg.onrender.com';
 
-const INITIAL_USERS = \[
-{ id: 'USR-001', username: "admin", password: "admin123", name: "System Admin", role: "Admin", vendorId: "" },
-{ id: 'USR-002', username: "staff", password: "staff123", name: "Operations Staff", role: "Staff", vendorId: "" },
-\];
+interface User {
+  id: string;
+  username: string;
+  password?: string;
+  name: string;
+  role: string;
+  vendorId?: string;
+}
 
-const INITIAL_VENDORS = \[\];
-const INITIAL_DELIVERIES = \[
-{ id: 'DEL-101', name: 'Royal Express', phone: '095000111', address: 'Yangon Main Hub', bankAccount: 'KBZPay: 095000111 (Royal)' },
-{ id: 'DEL-102', name: 'Ninja Van', phone: '096000222', address: 'Mandalay Hub', bankAccount: 'KBZPay: 096000222 (Ninja)' },
-\];
+interface Vendor {
+  id: string;
+  name: string;
+  phone: string;
+  address: string;
+  bankAccount: string;
+  freeStorageDays?: number;
+  dailyStoreFee?: number;
+}
 
-const INITIAL_ITEMS = \[\];
-const INITIAL_ORDERS = \[\];
-const INITIAL_RETURNS = \[\];
-const INITIAL_LOGS = \[
-{ id: 'LOG-101', user: 'System', role: 'Admin', action: 'System Clean Slate Initialized', timestamp: new Date().toLocaleString() }
-\];
+interface Delivery {
+  id: string;
+  name: string;
+  phone: string;
+  address: string;
+  bankAccount: string;
+}
+
+interface InventoryItem {
+  id: string;
+  vendorId: string;
+  name: string;
+  category?: string;
+  price: number;
+  quantity: number;
+  sku: string;
+  stockInDate: string;
+  handlingFee?: number;
+  storeChargePerDay?: number;
+  freeDays?: number;
+}
+
+interface OrderItem {
+  itemId: string;
+  name: string;
+  qty: number;
+  price: number;
+  discount: number;
+  status?: string;
+}
+
+interface Order {
+  id: string;
+  vendorId: string;
+  customerName: string;
+  customerPhone: string;
+  deliveryAddress: string;
+  deliveryService: string;
+  deliveryServiceId?: string;
+  trackingNo: string;
+  status: string;
+  cancelled: boolean;
+  items: OrderItem[];
+  itemTotal: number;
+  deliveryFee: number;
+  totalCod: number;
+  tnHandlingFee?: number;
+  tnStoreFee?: number;
+  codCollected?: boolean;
+  settlementStatus?: string;
+  createdAt: string;
+  updatedBy?: string;
+}
+
+interface ReturnItem {
+  id: string;
+  orderId?: string;
+  itemId?: string;
+  vendorId: string;
+  itemName: string;
+  qty: number;
+  type: string;
+  reason: string;
+  status: string;
+  date: string;
+}
+
+interface CashRecord {
+  id: string;
+  type: string;
+  referenceId: string;
+  amount: number;
+  description: string;
+  date: string;
+  createdBy: string;
+}
+
+interface LogRecord {
+  id: string;
+  user: string;
+  role: string;
+  action: string;
+  timestamp: string;
+}
+
+interface NotificationItem {
+  id: string;
+  title: string;
+  message: string;
+  type: string;
+  isRead: boolean;
+  createdAt: string;
+}
+
+const INITIAL_USERS: User[] = [
+  { id: 'USR-001', username: "admin", password: "admin123", name: "System Admin", role: "Admin", vendorId: "" },
+  { id: 'USR-002', username: "staff", password: "staff123", name: "Operations Staff", role: "Staff", vendorId: "" },
+];
+
+const INITIAL_DELIVERIES: Delivery[] = [
+  { id: 'DEL-101', name: 'Royal Express', phone: '095000111', address: 'Yangon Main Hub', bankAccount: 'KBZPay: 095000111 (Royal)' },
+  { id: 'DEL-102', name: 'Ninja Van', phone: '096000222', address: 'Mandalay Hub', bankAccount: 'KBZPay: 096000222 (Ninja)' },
+];
 
 export default function App() {
-const \[usersList, setUsersList\] = useState(INITIAL_USERS);
-const \[currentUser, setCurrentUser\] = useState(null);
-const \[loginInput, setLoginInput\] = useState({ username: '', password: '' });
-const \[loginError, setLoginError\] = useState('');
-
-const \[activeTab, setActiveTab\] = useState('dashboard');
-
-const \[vendors, setVendors\] = useState(INITIAL_VENDORS);
-const \[deliveries, setDeliveries\] = useState(INITIAL_DELIVERIES);
-const \[items, setItems\] = useState(INITIAL_ITEMS);
-const \[orders, setOrders\] = useState(INITIAL_ORDERS);
-const \[returns, setReturns\] = useState(INITIAL_RETURNS);
-const \[logs, setLogs\] = useState(INITIAL_LOGS);
-const \[cashLedger, setCashLedger\] = useState(\[\]);
-const \[notifications, setNotifications\] = useState(\[\]);
-const \[showNotificationDropdown, setShowNotificationDropdown\] = useState(false);
-const \[showSystemMenu, setShowSystemMenu\] = useState(false);
-
-// Tab-specific Unified Search States ("Search by...")
-const \[orderSearchMode, setOrderSearchMode\] = useState('ID');
-const \[orderSearchVal, setOrderSearchVal\] = useState('');
-const \[showOrderSearchDropdown, setShowOrderSearchDropdown\] = useState(false);
-
-const \[invSearchMode, setInvSearchMode\] = useState('ID');
-const \[invSearchVal, setInvSearchVal\] = useState('');
-const \[showInvSearchDropdown, setShowInvSearchDropdown\] = useState(false);
-
-const \[retSearchMode, setRetSearchMode\] = useState('ID');
-const \[retSearchVal, setRetSearchVal\] = useState('');
-const \[showRetSearchDropdown, setShowRetSearchDropdown\] = useState(false);
-
-const \[cashSearchMode, setCashSearchMode\] = useState('ID');
-const \[cashSearchVal, setCashSearchVal\] = useState('');
-const \[showCashSearchDropdown, setShowCashSearchDropdown\] = useState(false);
-
-const \[deliveryFilter, setDeliveryFilter\] = useState('ALL');
-
-const \[selectedOrderIds, setSelectedOrderIds\] = useState(\[\]);
-const \[selectedItemIds, setSelectedItemIds\] = useState(\[\]);
-const \[selectedReturnIds, setSelectedReturnIds\] = useState(\[\]);
-const \[selectedCashIds, setSelectedCashIds\] = useState(\[\]);
-
-const \[chartMetric, setChartMetric\] = useState('qty');
-const \[chartType, setChartType\] = useState('line');
-const \[sortOrder, setSortOrder\] = useState('desc');
-const \[hoveredPoint, setHoveredPoint\] = useState(null);
-
-const \[selectedOrder, setSelectedOrder\] = useState(null);
-const \[showOrderModal, setShowOrderModal\] = useState(false);
-const \[showVoucherModal, setShowVoucherModal\] = useState(false);
-const \[showItemModal, setShowItemModal\] = useState(false);
-const \[showUserModal, setShowUserModal\] = useState(false);
-const \[showVendorModal, setShowVendorModal\] = useState(false);
-const \[showDeliveryModal, setShowDeliveryModal\] = useState(false);
-const \[showReturnModal, setShowReturnModal\] = useState(false);
-const \[showCashModal, setShowCashModal\] = useState(false);
-
-// Edit Inventory Item Modal State (All fields editable)
-const \[showEditItemModal, setShowEditItemModal\] = useState(false);
-const \[editingInventoryItem, setEditingInventoryItem\] = useState(null);
-const \[editInventoryForm, setEditInventoryForm\] = useState({ name: '', category: '', price: '', quantity: '', handlingFee: '', storeChargePerDay: '', freeDays: '' });
-
-// Edit Return Modal State (Item Name and Quantity editable)
-const \[showEditReturnModal, setShowEditReturnModal\] = useState(false);
-const \[editingReturnItem, setEditingReturnItem\] = useState(null);
-const \[editReturnForm, setEditReturnForm\] = useState({ itemName: '', qty: 1, reason: '' });
-
-// Advanced Cash Modal State
-const \[cashFlowType, setCashFlowType\] = useState('COD_IN');
-const \[selectedPartnerId, setSelectedPartnerId\] = useState('');
-const \[selectedVoucherIds, setSelectedVoucherIds\] = useState(\[\]);
-const \[cashTransactionNo, setCashTransactionNo\] = useState('');
-const \[cashDescription, setCashDescription\] = useState('');
-
-// Partial Return Modal State
-const \[showPartialModal, setShowPartialModal\] = useState(false);
-const \[targetPartialOrder, setTargetPartialOrder\] = useState(null);
-const \[partialItemsForm, setPartialItemsForm\] = useState(\[\]);
-
-const \[editingVendor, setEditingVendor\] = useState(null);
-const \[editingDelivery, setEditingDelivery\] = useState(null);
-
-const \[targetReturnItem, setTargetReturnItem\] = useState(null);
-const \[returnForm, setReturnForm\] = useState({ qty: 1, reason: 'Overstock Return' });
-
-const \[editingUser, setEditingUser\] = useState(null);
-
-const \[newUser, setNewUser\] = useState({ username: '', password: '', name: '', role: 'Staff', vendorId: '' });
-const \[newVendor, setNewVendor\] = useState({ name: '', phone: '', address: '', bankAccount: '' });
-const \[newDelivery, setNewDelivery\] = useState({ id: '', name: '', phone: '', address: '', bankAccount: '' });
-
-const \[isExistingItemMode, setIsExistingItemMode\] = useState(true);
-const \[newItem, setNewItem\] = useState({
-vendorId: '',
-existingItemId: '',
-name: '',
-category: 'General',
-price: '',
-quantity: '',
-handlingFee: '500',
-storeChargePerDay: '30',
-freeDays: '7'
-});
-
-const \[newOrder, setNewOrder\] = useState({
-vendorId: '',
-customerName: '',
-customerPhone: '',
-deliveryAddress: '',
-deliveryServiceId: '',
-trackingNo: '',
-deliveryFee: 0,
-items: \[{ itemId: '', qty: 1, discount: 0 }\]
-});
-
-useEffect(() => {
-async function fetchData() {
-try {
-const resUsers = await fetch(`${API_BASE_URL}/api/users`);
-if (resUsers.ok) {
-const dataUsers = await resUsers.json();
-if (Array.isArray(dataUsers) && dataUsers.length > 0) setUsersList(dataUsers);
-}
-
-```
-    const resVendors = await fetch(`${API_BASE_URL}/api/vendors`);
-    if (resVendors.ok) {
-      const dataVendors = await resVendors.json();
-      if (Array.isArray(dataVendors)) setVendors(dataVendors);
-    }
-
-    const resDeliveries = await fetch(`${API_BASE_URL}/api/deliveries`);
-    if (resDeliveries.ok) {
-      const dataDeliveries = await resDeliveries.json();
-      if (Array.isArray(dataDeliveries)) setDeliveries(dataDeliveries);
-    }
-
-    const resItems = await fetch(`${API_BASE_URL}/api/inventory`);
-    if (resItems.ok) {
-      const dataItems = await resItems.json();
-      if (Array.isArray(dataItems)) setItems(dataItems);
-    }
-
-    const resOrders = await fetch(`${API_BASE_URL}/api/orders`);
-    if (resOrders.ok) {
-      const dataOrders = await resOrders.json();
-      if (Array.isArray(dataOrders)) setOrders(dataOrders);
-    }
-
-    const resReturns = await fetch(`${API_BASE_URL}/api/returns`);
-    if (resReturns.ok) {
-      const dataReturns = await resReturns.json();
-      if (Array.isArray(dataReturns)) setReturns(dataReturns);
-    }
-
-    const resCash = await fetch(`${API_BASE_URL}/api/cash-ledger`);
-    if (resCash.ok) {
-      const dataCash = await resCash.json();
-      if (Array.isArray(dataCash)) setCashLedger(dataCash);
-    }
-
-    const resNoti = await fetch(`${API_BASE_URL}/api/notifications`);
-    if (resNoti.ok) {
-      const dataNoti = await resNoti.json();
-      if (Array.isArray(dataNoti)) setNotifications(dataNoti);
-    }
-  } catch (err) {
-    console.error('API Sync Error:', err);
-  }
-}
-fetchData();
-
-```
-
-}, \[\]);
-
-const addLog = (actionText) => {
-if (!currentUser) return;
-const newLog = {
-id: `LOG-${Date.now().toString().slice(-4)}`,
-user: currentUser.name,
-role: currentUser.role,
-action: actionText,
-timestamp: new Date().toLocaleString()
-};
-setLogs(prev => \[newLog, ...prev\]);
-};
-
-const addNotification = async (title, message, type = 'info') => {
-const notiObj = {
-id: `NOTI-${Date.now().toString().slice(-4)}`,
-title,
-message,
-type,
-isRead: false,
-createdAt: new Date().toLocaleString()
-};
-try {
-await fetch(`${API_BASE_URL}/api/notifications`, {
-method: 'POST',
-headers: { 'Content-Type': 'application/json' },
-body: JSON.stringify(notiObj)
-});
-} catch (e) {}
-setNotifications(prev => \[notiObj, ...prev\]);
-};
-
-const handleLogin = (e) => {
-e.preventDefault();
-const found = usersList.find(u => u.username === loginInput.username && u.password === loginInput.password);
-if (found) {
-setCurrentUser(found);
-setLoginError('');
-} else {
-setLoginError('Username သို့မဟုတ် Password မှားယွင်းနေပါသည်။');
-}
-};
-
-const getDeliveryName = (order) => {
-if (order.deliveryServiceId) {
-const found = deliveries.find(d => d.id === order.deliveryServiceId);
-if (found) return found.name;
-}
-const foundByName = deliveries.find(d => d.name === order.deliveryService);
-if (foundByName) return foundByName.name;
-return order.deliveryService || 'Unassigned';
-};
-
-const handleCustomerPhoneChange = (phoneVal) => {
-setNewOrder(prev => {
-const updated = { ...prev, customerPhone: phoneVal };
-const matchedOrder = orders.find(o => o.customerPhone.trim() === phoneVal.trim());
-if (matchedOrder) {
-updated.customerName = matchedOrder.customerName;
-updated.deliveryAddress = matchedOrder.deliveryAddress;
-}
-return updated;
-});
-};
-
-const codCollectedVoucherIds = useMemo(() => {
-const ids = new Set();
-cashLedger.filter(c => c.type === 'COD_IN').forEach(c => {
-if (c.referenceId) {
-const matches = c.referenceId.match(/TN-ORD-\\d+/g);
-if (matches) {
-matches.forEach(id => ids.add(id));
-}
-}
-});
-return ids;
-}, \[cashLedger\]);
-
-const recordedVoucherIds = useMemo(() => {
-const ids = new Set();
-cashLedger.filter(c => c.type === 'VENDOR_OUT').forEach(c => {
-if (c.referenceId) {
-const matches = c.referenceId.match(/TN-ORD-\\d+/g);
-if (matches) {
-matches.forEach(id => ids.add(id));
-}
-}
-});
-return ids;
-}, \[cashLedger\]);
-
-const scopedItems = useMemo(() => {
-let res = items;
-if (currentUser && currentUser.role === 'Vendor') {
-res = res.filter(i => i.vendorId === currentUser.vendorId);
-}
-if (invSearchVal.trim()) {
-const q = invSearchVal.toLowerCase();
-if (invSearchMode === 'ID') {
-res = res.filter(i => i.id.toLowerCase().includes(q) || i.sku.toLowerCase().includes(q) || i.name.toLowerCase().includes(q));
-} else if (invSearchMode === 'DATE') {
-res = res.filter(i => i.stockInDate.includes(q));
-} else if (invSearchMode === 'VENDOR') {
-res = res.filter(i => i.vendorId === invSearchVal || (vendors.find(v => v.id === i.vendorId)?.name.toLowerCase().includes(q)));
-}
-}
-return res;
-}, \[items, currentUser, invSearchMode, invSearchVal, vendors\]);
-
-const scopedOrders = useMemo(() => {
-let res = orders;
-if (currentUser && currentUser.role === 'Vendor') {
-res = res.filter(o => o.vendorId === currentUser.vendorId);
-}
-if (deliveryFilter !== 'ALL') {
-res = res.filter(o => getDeliveryName(o) === deliveryFilter || o.deliveryServiceId === deliveryFilter);
-}
-if (orderSearchVal.trim()) {
-const q = orderSearchVal.toLowerCase();
-if (orderSearchMode === 'ID') {
-res = res.filter(o => o.id.toLowerCase().includes(q) || o.customerName.toLowerCase().includes(q) || o.customerPhone.toLowerCase().includes(q) || o.trackingNo.toLowerCase().includes(q));
-} else if (orderSearchMode === 'DATE') {
-res = res.filter(o => o.createdAt.toLowerCase().includes(q));
-} else if (orderSearchMode === 'VENDOR') {
-res = res.filter(o => o.vendorId === orderSearchVal || (vendors.find(v => v.id === o.vendorId)?.name.toLowerCase().includes(q)));
-} else if (orderSearchMode === 'DELIVERY') {
-res = res.filter(o => getDeliveryName(o).toLowerCase().includes(q));
-}
-}
-return res;
-}, \[orders, currentUser, deliveryFilter, orderSearchMode, orderSearchVal, vendors, deliveries\]);
-
-const scopedReturns = useMemo(() => {
-let res = returns;
-if (currentUser && currentUser.role === 'Vendor') {
-res = res.filter(r => r.vendorId === currentUser.vendorId);
-}
-if (retSearchVal.trim()) {
-const q = retSearchVal.toLowerCase();
-if (retSearchMode === 'ID') {
-res = res.filter(r => r.id.toLowerCase().includes(q) || r.itemName.toLowerCase().includes(q) || (r.orderId && r.orderId.toLowerCase().includes(q)));
-} else if (retSearchMode === 'DATE') {
-res = res.filter(r => r.date.toLowerCase().includes(q));
-} else if (retSearchMode === 'VENDOR') {
-res = res.filter(r => r.vendorId === retSearchVal || (vendors.find(v => v.id === r.vendorId)?.name.toLowerCase().includes(q)));
-} else if (retSearchMode === 'REASON') {
-res = res.filter(r => r.reason.toLowerCase().includes(q));
-}
-}
-return res;
-}, \[returns, currentUser, retSearchMode, retSearchVal, vendors\]);
-
-const scopedCashLedger = useMemo(() => {
-let res = cashLedger;
-if (cashSearchVal.trim()) {
-const q = cashSearchVal.toLowerCase();
-if (cashSearchMode === 'ID') {
-res = res.filter(c => c.id.toLowerCase().includes(q) || (c.referenceId && c.referenceId.toLowerCase().includes(q)) || (c.description && c.description.toLowerCase().includes(q)));
-} else if (cashSearchMode === 'DATE') {
-res = res.filter(c => c.date.toLowerCase().includes(q));
-} else if (cashSearchMode === 'TYPE') {
-res = res.filter(c => c.type.toLowerCase().includes(q));
-}
-}
-return res;
-}, \[cashLedger, cashSearchMode, cashSearchVal\]);
-
-function calculateStoreCharge(item, targetDate = new Date()) {
-const vendor = vendors.find(v => v.id === item.vendorId);
-const stockIn = new Date(item.stockInDate);
-const diffDays = Math.floor((targetDate.getTime() - stockIn.getTime()) / (1000 \* 60 \* 60 \* 24));
-const freeDays = item.freeDays !== undefined ? Number(item.freeDays) : (vendor ? vendor.freeStorageDays : 7);
-const dailyFee = item.storeChargePerDay !== undefined ? Number(item.storeChargePerDay) : (vendor ? vendor.dailyStoreFee : 30);
-
-```
-if (diffDays > freeDays) {
-  const extraDays = diffDays - freeDays;
-  return extraDays * dailyFee * (Number(item.quantity) || 0);
-}
-return 0;
-
-```
-
-}
-
-function calculateOrderStoreCharges(order) {
-let totalStore = 0;
-const orderDate = new Date(order.createdAt || Date.now());
-order.items.forEach(ordItem => {
-const stockItem = items.find(i => i.id === ordItem.itemId);
-if (stockItem) {
-const stockIn = new Date(stockItem.stockInDate);
-const diffDays = Math.floor((orderDate.getTime() - stockIn.getTime()) / (1000 \* 60 \* 60 \* 24));
-const freeDays = stockItem.freeDays !== undefined ? Number(stockItem.freeDays) : 7;
-const dailyFee = stockItem.storeChargePerDay !== undefined ? Number(stockItem.storeChargePerDay) : 30;
-if (diffDays > freeDays) {
-const extraDays = diffDays - freeDays;
-totalStore += extraDays \* dailyFee \* ordItem.qty;
-}
-}
-});
-return totalStore;
-}
-
-const stats = useMemo(() => {
-const totalOrders = scopedOrders.length;
-const pendingOrders = scopedOrders.filter(o => o.status === 'Pending' || o.status === 'In-Transit').length;
-const deliveredOrders = scopedOrders.filter(o => o.status === 'Delivered').length;
-const totalCodCollected = scopedOrders.filter(o => o.codCollected && !o.cancelled).reduce((sum, o) => sum + (Number(o.totalCod) || 0), 0);
-const totalTnRevenue = scopedOrders.filter(o => !o.cancelled).reduce((sum, o) => sum + (Number(o.tnHandlingFee) || 0) + (Number(o.tnStoreFee) || 0), 0);
-const totalStockValue = scopedItems.reduce((sum, i) => sum + ((Number(i.quantity) || 0) \* (Number(i.price) || 0)), 0);
-
-```
-return { totalOrders, pendingOrders, deliveredOrders, totalCodCollected, totalTnRevenue, totalStockValue };
-
-```
-
-}, \[scopedOrders, scopedItems\]);
-
-const exportSelectedToExcel = (type, dataList, selectedIds) => {
-const targetData = selectedIds.length > 0
-? dataList.filter(item => selectedIds.includes(item.id))
-: dataList;
-
-```
-if (targetData.length === 0) {
-  alert('Export ထုတ်ရန် ဒေတာ ရွေးချယ်ထားခြင်း မရှိပါ (သို့) ဒေတာ မရှိပါ။');
-  return;
-}
-
-const headers = Object.keys(targetData[0] || {}).join("\t");
-const rows = targetData.map(row => Object.values(row).map(v => typeof v === 'object' ? JSON.stringify(v) : v).join("\t")).join("\n");
-const blob = new Blob([headers + "\n" + rows], { type: 'application/vnd.ms-excel' });
-const url = URL.createObjectURL(blob);
-const link = document.createElement("a");
-link.href = url;
-link.download = `TN_Fulfillment_Selected_${type}_${Date.now()}.xls`;
-document.body.appendChild(link);
-link.click();
-link.remove();
-addLog(`Exported selected ${type} data as Excel .xls format`);
-
-```
-
-};
-
-const handleExportBackup = () => {
-const backupData = {
-version: '1.0',
-timestamp: new Date().toISOString(),
-usersList, vendors, deliveries, items, orders, returns, cashLedger, logs
-};
-const blob = new Blob(\[JSON.stringify(backupData, null, 2)\], { type: 'application/json' });
-const url = URL.createObjectURL(blob);
-const link = document.createElement('a');
-link.href = url;
-link.download = `TN_Fulfillment_Backup_${Date.now()}.json`;
-document.body.appendChild(link);
-link.click();
-link.remove();
-addLog('Exported full system JSON backup');
-};
-
-const handleImportBackup = (e) => {
-const file = e.target.files\[0\];
-if (!file) return;
-const reader = new FileReader();
-reader.onload = (event) => {
-try {
-const parsed = JSON.parse(event.target.result);
-if (parsed.orders && parsed.vendors) {
-if (parsed.usersList) setUsersList(parsed.usersList);
-if (parsed.vendors) setVendors(parsed.vendors);
-if (parsed.deliveries) setDeliveries(parsed.deliveries);
-if (parsed.items) setItems(parsed.items);
-if (parsed.orders) setOrders(parsed.orders);
-if (parsed.returns) setReturns(parsed.returns);
-if (parsed.cashLedger) setCashLedger(parsed.cashLedger);
-alert('Database Restore အောင်မြင်ပါသည်။');
-addLog('Restored system from JSON backup');
-} else {
-alert('Backup ဖိုင် ပုံစံ မှားယွင်းနေပါသည်။');
-}
-} catch (err) {
-alert('JSON ဖိုင်ကို ဖတ်၍မရပါ။');
-}
-};
-reader.readAsText(file);
-};
-
-const handleCancelInventoryItem = async (item) => {
-if (confirm(`သတိပေးချက်: Stock item "${item.name}" ကို Cancel လုပ်၍ စာရင်းမှ ဖျက်ပစ်ပြီး သက်ဆိုင်ရာ လက်ကျန်ဒေတာများကို Update လုပ်မည် သေချာပါသလား?`)) {
-try {
-await fetch(`${API_BASE_URL}/api/inventory/${item.id}`, { method: 'DELETE' });
-} catch (e) {}
-setItems(items.filter(i => i.id !== item.id));
-addLog(`Cancelled and removed inventory item ${item.name} (SKU: ${item.sku})`);
-}
-};
-
-const handleCancelReturnItem = async (ret) => {
-const targetOrder = orders.find(o => o.id === ret.orderId);
-if (targetOrder && targetOrder.status === 'Delivered') {
-alert('ဤ Voucher သည် Delivered ဖြစ်ပြီးသားဖြစ်သဖြင့် Return ကို Cancel လုပ်၍မရပါ။ (ပြန်ပေါင်း၍မရပါ)');
-return;
-}
-
-```
-if (confirm(`Return record ${ret.id} ကို Cancel လုပ်မည် သေချာပါသလား? (သက်ဆိုင်ရာ Voucher ၏ Status ကို Pending သို့ ပြန်ပြောင်းမည်။)`)) {
-  try {
-    await fetch(`${API_BASE_URL}/api/returns/${ret.id}`, { method: 'DELETE' });
-  } catch (e) {}
-
-  if (targetOrder) {
-    const updatedOrder = {
-      ...targetOrder,
-      status: 'Pending',
-      cancelled: false,
-      codCollected: false,
-      updatedBy: currentUser?.name || 'Staff'
-    };
-    try {
-      await fetch(`${API_BASE_URL}/api/orders/${targetOrder.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedOrder)
-      });
-    } catch (e) {}
-    setOrders(prev => prev.map(o => o.id === targetOrder.id ? updatedOrder : o));
-  }
-
-  setReturns(returns.filter(r => r.id !== ret.id));
-  addLog(`Cancelled return record ${ret.id} and reset order ${ret.orderId} status back to Pending.`);
-}
-
-```
-
-};
-
-const handleCreateOrder = async (e) => {
-e.preventDefault();
-if (!newOrder.vendorId || newOrder.items.length === 0) return;
-
-```
-const matchedDelivery = deliveries.find(d => d.id === newOrder.deliveryServiceId || d.name === newOrder.deliveryServiceId);
-const selectedDeliveryName = matchedDelivery ? matchedDelivery.name : (newOrder.deliveryServiceId || 'Royal Express');
-const selectedDeliveryId = matchedDelivery ? matchedDelivery.id : '';
-
-let itemTotal = 0;
-const orderItems = newOrder.items.map(it => {
-  const itemData = items.find(i => i.id === it.itemId);
-  const price = itemData ? (Number(itemData.price) || 0) : 0;
-  const lineTotal = (price - (Number(it.discount) || 0)) * (Number(it.qty) || 1);
-  itemTotal += lineTotal;
-  return {
-    itemId: it.itemId,
-    name: itemData ? itemData.name : 'Unknown Item',
-    qty: Number(it.qty) || 1,
-    price: price,
-    discount: Number(it.discount) || 0,
-    status: 'Delivered'
-  };
-});
-
-const createdOrder = {
-  id: `TN-ORD-${Math.floor(1000 + Math.random() * 9000)}`,
-  vendorId: newOrder.vendorId,
-  customerName: newOrder.customerName,
-  customerPhone: newOrder.customerPhone,
-  deliveryAddress: newOrder.deliveryAddress,
-  deliveryService: selectedDeliveryName,
-  deliveryServiceId: selectedDeliveryId,
-  trackingNo: newOrder.trackingNo || 'PENDING',
-  status: 'Pending',
-  cancelled: false,
-  items: orderItems,
-  itemTotal: itemTotal,
-  deliveryFee: Number(newOrder.deliveryFee) || 0,
-  totalCod: itemTotal + (Number(newOrder.deliveryFee) || 0),
-  tnHandlingFee: 500,
-  tnStoreFee: 0,
-  codCollected: false,
-  settlementStatus: 'Pending',
-  createdAt: new Date().toLocaleString(),
-  updatedBy: currentUser?.name || 'Staff'
-};
-
-try {
-  await fetch(`${API_BASE_URL}/api/orders`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(createdOrder)
+  const [usersList, setUsersList] = useState<User[]>(INITIAL_USERS);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [loginInput, setLoginInput] = useState({ username: '', password: '' });
+  const [loginError, setLoginError] = useState('');
+
+  const [activeTab, setActiveTab] = useState('dashboard');
+  
+  const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [deliveries, setDeliveries] = useState<Delivery[]>(INITIAL_DELIVERIES);
+  const [items, setItems] = useState<InventoryItem[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [returns, setReturns] = useState<ReturnItem[]>([]);
+  const [logs, setLogs] = useState<LogRecord[]>([
+    { id: 'LOG-101', user: 'System', role: 'Admin', action: 'System Initialized', timestamp: new Date().toLocaleString() }
+  ]);
+  const [cashLedger, setCashLedger] = useState<CashRecord[]>([]);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [showNotificationDropdown, setShowNotificationDropdown] = useState(false);
+  const [showSystemMenu, setShowSystemMenu] = useState(false);
+
+  // Search States
+  const [orderSearchMode, setOrderSearchMode] = useState('ID');
+  const [orderSearchVal, setOrderSearchVal] = useState('');
+  const [showOrderSearchDropdown, setShowOrderSearchDropdown] = useState(false);
+
+  const [invSearchMode, setInvSearchMode] = useState('ID');
+  const [invSearchVal, setInvSearchVal] = useState('');
+  const [showInvSearchDropdown, setShowInvSearchDropdown] = useState(false);
+
+  const [retSearchMode, setRetSearchMode] = useState('ID');
+  const [retSearchVal, setRetSearchVal] = useState('');
+  const [showRetSearchDropdown, setShowRetSearchDropdown] = useState(false);
+
+  const [cashSearchMode, setCashSearchMode] = useState('ID');
+  const [cashSearchVal, setCashSearchVal] = useState('');
+  const [showCashSearchDropdown, setShowCashSearchDropdown] = useState(false);
+
+  const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
+  const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
+  const [selectedReturnIds, setSelectedReturnIds] = useState<string[]>([]);
+  const [selectedCashIds, setSelectedCashIds] = useState<string[]>([]);
+
+  // Modals
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [showOrderModal, setShowOrderModal] = useState(false);
+  const [showVoucherModal, setShowVoucherModal] = useState(false);
+  const [showItemModal, setShowItemModal] = useState(false);
+  const [showUserModal, setShowUserModal] = useState(false);
+  const [showVendorModal, setShowVendorModal] = useState(false);
+  const [showDeliveryModal, setShowDeliveryModal] = useState(false);
+  const [showReturnModal, setShowReturnModal] = useState(false);
+  const [showCashModal, setShowCashModal] = useState(false);
+
+  // Edit Inventory
+  const [showEditItemModal, setShowEditItemModal] = useState(false);
+  const [editingInventoryItem, setEditingInventoryItem] = useState<InventoryItem | null>(null);
+  const [editInventoryForm, setEditInventoryForm] = useState({ name: '', category: '', price: 0, quantity: 0 });
+
+  // Edit Return
+  const [showEditReturnModal, setShowEditReturnModal] = useState(false);
+  const [editingReturnItem, setEditingReturnItem] = useState<ReturnItem | null>(null);
+  const [editReturnForm, setEditReturnForm] = useState({ itemName: '', qty: 1, reason: '' });
+
+  // Cash Modal State
+  const [cashFlowType, setCashFlowType] = useState('COD_IN');
+  const [selectedPartnerId, setSelectedPartnerId] = useState('');
+  const [selectedVoucherIds, setSelectedVoucherIds] = useState<string[]>([]);
+  const [cashTransactionNo, setCashTransactionNo] = useState('');
+  const [cashDescription, setCashDescription] = useState('');
+
+  // Partial Modal
+  const [showPartialModal, setShowPartialModal] = useState(false);
+  const [targetPartialOrder, setTargetPartialOrder] = useState<Order | null>(null);
+  const [partialItemsForm, setPartialItemsForm] = useState<any[]>([]);
+
+  const [editingVendor, setEditingVendor] = useState<Vendor | null>(null);
+  const [editingDelivery, setEditingDelivery] = useState<Delivery | null>(null);
+  const [targetReturnItem, setTargetReturnItem] = useState<InventoryItem | null>(null);
+  const [returnForm, setReturnForm] = useState({ qty: 1, reason: 'Overstock Return' });
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+
+  const [newUser, setNewUser] = useState({ username: '', password: '', name: '', role: 'Staff', vendorId: '' });
+  const [newVendor, setNewVendor] = useState({ name: '', phone: '', address: '', bankAccount: '' });
+  const [newDelivery, setNewDelivery] = useState({ id: '', name: '', phone: '', address: '', bankAccount: '' });
+  const [newItem, setNewItem] = useState({ vendorId: '', name: '', category: 'General', price: 0, quantity: 0 });
+
+  const [newOrder, setNewOrder] = useState({
+    vendorId: '',
+    customerName: '',
+    customerPhone: '',
+    deliveryAddress: '',
+    deliveryServiceId: '',
+    trackingNo: '',
+    deliveryFee: 0,
+    items: [{ itemId: '', qty: 1, discount: 0 }]
   });
-} catch (err) {
-  console.error('Order save error:', err);
-}
 
-setOrders([createdOrder, ...orders]);
-for (const ordered of newOrder.items) {
-  const targetItem = items.find(i => i.id === ordered.itemId);
-  if (targetItem) {
-    const newQty = Math.max(0, (Number(targetItem.quantity) || 0) - (Number(ordered.qty) || 1));
-    setItems(prev => prev.map(i => i.id === targetItem.id ? { ...i, quantity: newQty } : i));
-  }
-}
-
-addNotification('New Order Created', `Order ID ${createdOrder.id} has been created.`, 'order');
-addLog(`Created new order ${createdOrder.id} for Vendor ${newOrder.vendorId}`);
-setShowOrderModal(false);
-
-```
-
-};
-
-const handleUpdateOrderStatus = async (orderId, newStatus, newTracking) => {
-const targetOrder = orders.find(o => o.id === orderId);
-if (!targetOrder) return;
-
-```
-if (codCollectedVoucherIds.has(orderId)) {
-  alert('ဤ Voucher သည် COD Cash အဝင်စာရင်း (COD Flow) ပြီးစီးသွားပြီဖြစ်သဖြင့် Status ပြောင်းလဲ၍မရတော့ပါ။');
-  return;
-}
-
-if (newStatus === 'Cancelled' && currentUser?.role !== 'Admin') {
-  alert('ခွင့်ပြုချက်မရှိပါ: Cancelled အခြေအနေသို့ ပြောင်းလဲရန် Admin အဆင့် လိုအပ်ပါသည်။');
-  return;
-}
-
-// Return Status မှ အခြား Active Status သို့ ပြောင်းလဲပါက Return Records များ ရှင်းလင်းပေးခြင်း
-const wasReturn = targetOrder.status === 'Delivery Return' || targetOrder.status === 'Partial Return';
-const isNowActive = newStatus === 'Pending' || newStatus === 'In-Transit' || newStatus === 'Delivered';
-
-if (wasReturn && isNowActive) {
-  const relatedReturns = returns.filter(r => r.orderId === orderId);
-  for (const ret of relatedReturns) {
-    try {
-      await fetch(`${API_BASE_URL}/api/returns/${ret.id}`, { method: 'DELETE' });
-    } catch (e) {}
-  }
-  setReturns(prev => prev.filter(r => r.orderId !== orderId));
-  addLog(`Synchronized: Removed related return records for order ${orderId} as status changed back to ${newStatus}`);
-}
-
-if (newStatus === 'Partial Return') {
-  setTargetPartialOrder(targetOrder);
-  setPartialItemsForm(targetOrder.items.map(it => ({
-    itemId: it.itemId,
-    name: it.name,
-    totalQty: it.qty,
-    deliveredQty: it.qty,
-    returnedQty: 0,
-    price: it.price,
-    discount: it.discount
-  })));
-  setShowPartialModal(true);
-  return;
-}
-
-const isDelivered = newStatus === 'Delivered';
-const isCancelled = newStatus === 'Cancelled';
-const isDeliveryReturn = newStatus === 'Delivery Return';
-
-if (isCancelled && !targetOrder.cancelled) {
-  for (const ordItem of targetOrder.items) {
-    const stockItem = items.find(i => i.id === ordItem.itemId);
-    if (stockItem) {
-      setItems(prev => prev.map(i => i.id === stockItem.id ? { ...i, quantity: (Number(i.quantity) || 0) + (Number(ordItem.qty) || 0) } : i));
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const resUsers = await fetch(`${API_BASE_URL}/api/users`);
+        if (resUsers.ok) {
+          const data = await resUsers.json();
+          if (Array.isArray(data) && data.length > 0) setUsersList(data);
+        }
+        const resVendors = await fetch(`${API_BASE_URL}/api/vendors`);
+        if (resVendors.ok) {
+          const data = await resVendors.json();
+          if (Array.isArray(data)) setVendors(data);
+        }
+        const resDeliveries = await fetch(`${API_BASE_URL}/api/deliveries`);
+        if (resDeliveries.ok) {
+          const data = await resDeliveries.json();
+          if (Array.isArray(data)) setDeliveries(data);
+        }
+        const resItems = await fetch(`${API_BASE_URL}/api/inventory`);
+        if (resItems.ok) {
+          const data = await resItems.json();
+          if (Array.isArray(data)) setItems(data);
+        }
+        const resOrders = await fetch(`${API_BASE_URL}/api/orders`);
+        if (resOrders.ok) {
+          const data = await resOrders.json();
+          if (Array.isArray(data)) setOrders(data);
+        }
+        const resReturns = await fetch(`${API_BASE_URL}/api/returns`);
+        if (resReturns.ok) {
+          const data = await resReturns.json();
+          if (Array.isArray(data)) setReturns(data);
+        }
+        const resCash = await fetch(`${API_BASE_URL}/api/cash-ledger`);
+        if (resCash.ok) {
+          const data = await resCash.json();
+          if (Array.isArray(data)) setCashLedger(data);
+        }
+      } catch (err) {
+        console.error('Data Sync Error:', err);
+      }
     }
-  }
-  addLog(`Cancelled Order ${orderId}: Restored stock quantities back to Inventory.`);
-}
+    fetchData();
+  }, []);
 
-const updatedItems = targetOrder.items.map(it => ({
-  ...it,
-  status: isDelivered ? 'Delivered' : isDeliveryReturn ? 'Returned' : it.status
-}));
-
-const updatedFields = {
-  ...targetOrder,
-  status: newStatus,
-  trackingNo: newTracking || targetOrder.trackingNo,
-  cancelled: isCancelled,
-  codCollected: isDelivered ? true : false,
-  items: updatedItems,
-  updatedBy: currentUser?.name || 'Staff'
-};
-
-try {
-  await fetch(`${API_BASE_URL}/api/orders/${orderId}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(updatedFields)
-  }).catch(() => fetch(`${API_BASE_URL}/api/orders`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(updatedFields)
-  }));
-} catch (e) {}
-
-if (isDeliveryReturn && targetOrder.status !== 'Delivery Return') {
-  const newReturnObj = {
-    id: `RET-${Date.now().toString().slice(-3)}`,
-    orderId: targetOrder.id,
-    itemId: targetOrder.items[0]?.itemId || '',
-    vendorId: targetOrder.vendorId,
-    itemName: targetOrder.items.map(i => `${i.name} (${i.qty} pcs)`).join(', '),
-    qty: targetOrder.items.reduce((sum, i) => sum + (Number(i.qty) || 1), 0),
-    type: 'Delivery Return',
-    reason: 'Customer Refused / Returned from Delivery',
-    status: 'In Warehouse (Voucher Stock)',
-    date: new Date().toLocaleDateString()
+  const addLog = (actionText: string) => {
+    if (!currentUser) return;
+    const newLog: LogRecord = {
+      id: `LOG-${Date.now().toString().slice(-4)}`,
+      user: currentUser.name,
+      role: currentUser.role,
+      action: actionText,
+      timestamp: new Date().toLocaleString()
+    };
+    setLogs(prev => [newLog, ...prev]);
   };
-  try {
-    await fetch(`${API_BASE_URL}/api/returns`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newReturnObj)
-    });
-  } catch (e) {}
-  setReturns(prev => [newReturnObj, ...prev]);
-  addNotification('Delivery Return', `Order ${targetOrder.id} returned from delivery.`, 'return');
-}
 
-setOrders(prev => prev.map(o => o.id === orderId ? { ...o, ...updatedFields } : o));
-addNotification('Order Updated', `Order ${orderId} status changed to ${newStatus}`, 'order');
-addLog(`Updated Order ${orderId} status to '${newStatus}'`);
+  const addNotification = async (title: string, message: string, type = 'info') => {
+    const notiObj: NotificationItem = {
+      id: `NOTI-${Date.now().toString().slice(-4)}`,
+      title,
+      message,
+      type,
+      isRead: false,
+      createdAt: new Date().toLocaleString()
+    };
+    setNotifications(prev => [notiObj, ...prev]);
+  };
 
-```
-
-};
-
-const handleDeleteVoucher = async (orderId) => {
-if (codCollectedVoucherIds.has(orderId)) {
-alert('ဤ Voucher သည် COD ငွေအဝင်စာရင်း ပြီးစီးပြီးဖြစ်သဖြင့် ဖျက်၍မရပါ။');
-return;
-}
-const targetOrder = orders.find(o => o.id === orderId);
-
-```
-// Partial Return Voucher များကို Delete လုပ်၍မရအောင် တားမြစ်ခြင်း
-if (targetOrder?.status === 'Partial Return') {
-  alert('Partial Return ဖြစ်နေသော Voucher များကို ဖျက်၍မရပါ။ (Voucher ဆက်လက် လည်ပတ်နေဆဲဖြစ်ပါသည်)');
-  return;
-}
-
-if (currentUser?.role !== 'Admin') {
-  alert('ခွင့်ပြုချက်မရှိပါ: Voucher များကို ဖျက်ရန် Admin အဆင့် လိုအပ်ပါသည်။');
-  return;
-}
-
-if (!targetOrder?.cancelled && targetOrder?.status !== 'Delivery Return') {
-  alert('ခွင့်ပြုချက်မရှိပါ: Cancelled သို့မဟုတ် Delivery Return ဖြစ်နေသော Voucher များကိုသာ ဖျက်ခွင့်ရှိပါသည်။');
-  return;
-}
-
-if (confirm(`သတိပေးချက်: Voucher ${orderId} ကို စနစ်ထဲမှ ဖျက်ပစ်ပြီး Stock Qty များကို ပြန်လည်ဖော်ပြမည် သေချာပါသလား?`)) {
-  for (const ordItem of targetOrder.items) {
-    const stockItem = items.find(i => i.id === ordItem.itemId);
-    if (stockItem) {
-      setItems(prev => prev.map(i => i.id === stockItem.id ? { ...i, quantity: (Number(i.quantity) || 0) + (Number(ordItem.qty) || 0) } : i));
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    const found = usersList.find(u => u.username === loginInput.username && u.password === loginInput.password);
+    if (found) {
+      setCurrentUser(found);
+      setLoginError('');
+    } else {
+      setLoginError('Username သို့မဟုတ် Password မှားယွင်းနေပါသည်။');
     }
+  };
+
+  const getDeliveryName = (order: Order) => {
+    if (order.deliveryServiceId) {
+      const found = deliveries.find(d => d.id === order.deliveryServiceId);
+      if (found) return found.name;
+    }
+    return order.deliveryService || 'Unassigned';
+  };
+
+  const codCollectedVoucherIds = useMemo(() => {
+    const ids = new Set<string>();
+    cashLedger.filter(c => c.type === 'COD_IN').forEach(c => {
+      if (c.referenceId) {
+        const matches = c.referenceId.match(/TN-ORD-\d+/g);
+        if (matches) matches.forEach(id => ids.add(id));
+      }
+    });
+    return ids;
+  }, [cashLedger]);
+
+  const scopedItems = useMemo(() => {
+    let res = items;
+    if (currentUser && currentUser.role === 'Vendor') {
+      res = res.filter(i => i.vendorId === currentUser.vendorId);
+    }
+    if (invSearchVal.trim()) {
+      const q = invSearchVal.toLowerCase();
+      if (invSearchMode === 'ID') {
+        res = res.filter(i => i.id.toLowerCase().includes(q) || i.sku.toLowerCase().includes(q) || i.name.toLowerCase().includes(q));
+      }
+    }
+    return res;
+  }, [items, currentUser, invSearchMode, invSearchVal]);
+
+  const scopedOrders = useMemo(() => {
+    let res = orders;
+    if (currentUser && currentUser.role === 'Vendor') {
+      res = res.filter(o => o.vendorId === currentUser.vendorId);
+    }
+    if (orderSearchVal.trim()) {
+      const q = orderSearchVal.toLowerCase();
+      if (orderSearchMode === 'ID') {
+        res = res.filter(o => o.id.toLowerCase().includes(q) || o.customerName.toLowerCase().includes(q) || o.customerPhone.toLowerCase().includes(q));
+      }
+    }
+    return res;
+  }, [orders, currentUser, orderSearchMode, orderSearchVal]);
+
+  const scopedReturns = useMemo(() => {
+    let res = returns;
+    if (currentUser && currentUser.role === 'Vendor') {
+      res = res.filter(r => r.vendorId === currentUser.vendorId);
+    }
+    return res;
+  }, [returns, currentUser]);
+
+  const scopedCashLedger = useMemo(() => cashLedger, [cashLedger]);
+
+  function calculateStoreCharge(item: InventoryItem) {
+    const stockIn = new Date(item.stockInDate);
+    const diffDays = Math.floor((new Date().getTime() - stockIn.getTime()) / (1000 * 60 * 60 * 24));
+    const freeDays = item.freeDays ?? 7;
+    const dailyFee = item.storeChargePerDay ?? 30;
+
+    if (diffDays > freeDays) {
+      return (diffDays - freeDays) * dailyFee * (item.quantity || 0);
+    }
+    return 0;
   }
 
-  // တိုက်ရိုက် ဆက်စပ်နေသော Return Records များကို ပါ ဖျက်ပေးခြင်း
-  const relatedReturns = returns.filter(r => r.orderId === orderId);
-  for (const ret of relatedReturns) {
-    try {
-      await fetch(`${API_BASE_URL}/api/returns/${ret.id}`, { method: 'DELETE' });
-    } catch (e) {}
-  }
-  setReturns(prev => prev.filter(r => r.orderId !== orderId));
+  const handleDeleteVoucher = async (orderId: string) => {
+    if (codCollectedVoucherIds.has(orderId)) {
+      alert('ဤ Voucher သည် COD ငွေအဝင်စာရင်း ပြီးစီးပြီးဖြစ်သဖြင့် ဖျက်၍မရပါ။');
+      return;
+    }
+    const targetOrder = orders.find(o => o.id === orderId);
+    if (targetOrder?.status === 'Partial Return') {
+      alert('Partial Return ဖြစ်နေသော Voucher များကို ဖျက်၍မရပါ။');
+      return;
+    }
+    if (currentUser?.role !== 'Admin') {
+      alert('ခွင့်ပြုချက်မရှိပါ: Admin သာ ဖျက်ပိုင်ခွင့်ရှိပါသည်။');
+      return;
+    }
 
-  try {
-    await fetch(`${API_BASE_URL}/api/orders/${orderId}`, { method: 'DELETE' });
-  } catch (e) {}
+    if (confirm(`Voucher ${orderId} ကို ဖျက်ပစ်မည် သေချာပါသလား?`)) {
+      if (targetOrder) {
+        for (const ordItem of targetOrder.items) {
+          const stockItem = items.find(i => i.id === ordItem.itemId);
+          if (stockItem) {
+            setItems(prev => prev.map(i => i.id === stockItem.id ? { ...i, quantity: (i.quantity || 0) + (ordItem.qty || 0) } : i));
+          }
+        }
+      }
 
-  setOrders(prev => prev.filter(o => o.id !== orderId));
-  setSelectedOrderIds(prev => prev.filter(id => id !== orderId));
-  addLog(`Admin deleted Voucher ${orderId} and synchronized stock & return records.`);
-}
+      setReturns(prev => prev.filter(r => r.orderId !== orderId));
+      setOrders(prev => prev.filter(o => o.id !== orderId));
+      addLog(`Deleted Voucher ${orderId}`);
+    }
+  };
 
-```
+  const handleUpdateOrderStatus = async (orderId: string, newStatus: string) => {
+    const targetOrder = orders.find(o => o.id === orderId);
+    if (!targetOrder) return;
 
-};
+    if (codCollectedVoucherIds.has(orderId)) {
+      alert('ဤ Voucher သည် COD Cash Flow ပြီးစီးသွားပြီဖြစ်သဖြင့် Status ပြောင်း၍မရပါ။');
+      return;
+    }
 
-if (!currentUser) {
-return (
+    const wasReturn = targetOrder.status === 'Delivery Return' || targetOrder.status === 'Partial Return';
+    const isNowActive = newStatus === 'Pending' || newStatus === 'In-Transit' || newStatus === 'Delivered';
 
+    if (wasReturn && isNowActive) {
+      setReturns(prev => prev.filter(r => r.orderId !== orderId));
+      addLog(`Synchronized: Removed return records for ${orderId} as status changed back to ${newStatus}`);
+    }
 
+    if (newStatus === 'Partial Return') {
+      setTargetPartialOrder(targetOrder);
+      setPartialItemsForm(targetOrder.items.map(it => ({
+        itemId: it.itemId,
+        name: it.name,
+        totalQty: it.qty,
+        deliveredQty: it.qty,
+        returnedQty: 0,
+        price: it.price,
+        discount: it.discount
+      })));
+      setShowPartialModal(true);
+      return;
+    }
 
+    const updatedOrder = { ...targetOrder, status: newStatus };
+    setOrders(prev => prev.map(o => o.id === orderId ? updatedOrder : o));
+    addLog(`Updated Order ${orderId} status to ${newStatus}`);
+  };
 
-T&N
-
-T&N Fulfillment System
-Vendor & Logistics Management Platform
-
-```
-      {loginError && (
-        <div className="bg-rose-50 border border-rose-200 text-rose-700 p-3 rounded-lg text-xs flex items-center space-x-2">
-          <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-          <span>{loginError}</span>
-        </div>
-      )}
-
-      <form onSubmit={handleLogin} className="space-y-4 text-xs">
-        <div>
-          <label className="block font-semibold text-slate-700 mb-1">Username</label>
-          <input 
-            type="text" required
-            placeholder="Enter username"
-            value={loginInput.username}
-            onChange={(e) => setLoginInput({ ...loginInput, username: e.target.value })}
-            className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
-          />
-        </div>
-
-        <div>
-          <label className="block font-semibold text-slate-700 mb-1">Password</label>
-          <input 
-            type="password" required
-            placeholder="••••••••"
-            value={loginInput.password}
-            onChange={(e) => setLoginInput({ ...loginInput, password: e.target.value })}
-            className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
-          />
-        </div>
-
-        <button 
-          type="submit"
-          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-lg shadow-md transition-all text-sm"
-        >
-          Sign In
-        </button>
-      </form>
-
-      <div className="border-t pt-4 text-center text-xs text-slate-400">
-        Protected Corporate System • T&N Fulfillment
-      </div>
-    </div>
-  </div>
-);
-
-```
-
-}
-
-return (
-
-```
-  <header className="bg-slate-900 text-white sticky top-0 z-30 shadow-md">
-    <div className="max-w-7xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-4">
-      <div className="flex items-center space-x-3">
-        <div className="bg-indigo-600 text-white p-2 rounded-lg font-extrabold text-xl tracking-wider">
-          T&N
-        </div>
-        <div>
-          <h1 className="font-bold text-lg leading-none">T&N Fulfillment System</h1>
-          <p className="text-xs text-slate-400 mt-1">Vendor & Logistics Management Platform</p>
-        </div>
-      </div>
-
-      <div className="flex items-center space-x-3">
-        <div className="relative">
-          <button 
-            onClick={() => setShowNotificationDropdown(!showNotificationDropdown)}
-            className="relative bg-slate-800 hover:bg-slate-700 p-2 rounded-lg text-slate-200 transition-colors"
-            title="Notifications"
-          >
-            <Bell className="w-4 h-4" />
-            {notifications.filter(n => !n.isRead).length > 0 && (
-              <span className="absolute -top-1 -right-1 bg-rose-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
-                {notifications.filter(n => !n.isRead).length}
-              </span>
-            )}
-          </button>
-
-          {showNotificationDropdown && (
-            <div className="absolute right-0 mt-2 w-80 bg-white text-slate-800 rounded-xl shadow-2xl border border-slate-200 z-50 overflow-hidden">
-              <div className="bg-slate-100 p-3 font-bold text-xs border-b flex justify-between items-center">
-                <span>Notifications</span>
-                <button 
-                  onClick={() => setNotifications(notifications.map(n => ({ ...n, isRead: true })))}
-                  className="text-[10px] text-indigo-600 hover:underline"
-                >
-                  Mark all read
-                </button>
-              </div>
-              <div className="max-h-64 overflow-y-auto divide-y text-xs">
-                {notifications.length === 0 ? (
-                  <div className="p-4 text-center text-slate-400">No notifications</div>
-                ) : (
-                  notifications.map(n => (
-                    <div key={n.id} className={`p-3 hover:bg-slate-50 ${!n.isRead ? 'bg-indigo-50/50 font-semibold' : ''}`}>
-                      <p className="text-slate-900">{n.title}</p>
-                      <p className="text-slate-600 text-[11px] mt-0.5">{n.message}</p>
-                      <p className="text-[9px] text-slate-400 mt-1">{n.createdAt}</p>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700 flex items-center space-x-2">
-          <ShieldCheck className="w-4 h-4 text-emerald-400" />
-          <div className="text-xs">
-            <p className="text-indigo-300 font-bold">{currentUser.name}</p>
-            <p className="text-[10px] text-slate-400 uppercase">Role: {currentUser.role}</p>
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 font-sans">
+        <div className="bg-white rounded-2xl max-w-md w-full p-8 shadow-2xl border border-slate-700 space-y-6">
+          <div className="text-center space-y-2">
+            <div className="bg-indigo-600 text-white p-3 rounded-2xl inline-block shadow-lg font-black text-xl">T&N</div>
+            <h1 className="text-2xl font-bold text-slate-900">T&N Fulfillment System</h1>
+            <p className="text-xs text-slate-500">Vendor & Logistics Management</p>
           </div>
-        </div>
 
-        <div className="relative">
-          <button 
-            onClick={() => setShowSystemMenu(!showSystemMenu)}
-            className="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white p-2.5 rounded-lg transition-colors flex items-center justify-center"
-            title="System Menu"
-          >
-            <Menu className="w-4 h-4" />
-          </button>
-
-          {showSystemMenu && (
-            <div className="absolute right-0 mt-2 w-48 bg-white text-slate-800 rounded-xl shadow-2xl border border-slate-200 z-50 overflow-hidden text-xs py-1">
-              {currentUser.role === 'Admin' && (
-                <>
-                  <button 
-                    onClick={() => { setShowSystemMenu(false); handleExportBackup(); }}
-                    className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center space-x-2 text-slate-700"
-                  >
-                    <Download className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Backup Database</span>
-                  </button>
-                  <label className="w-full text-left px-4 py-2 hover:bg-slate-100 flex items-center space-x-2 text-slate-700 cursor-pointer">
-                    <Upload className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Restore Database</span>
-                    <input type="file" accept=".json" onChange={(e) => { setShowSystemMenu(false); handleImportBackup(e); }} className="hidden" />
-                  </label>
-                  <div className="border-t my-1"></div>
-                </>
-              )}
-              <button 
-                onClick={() => { setShowSystemMenu(false); addLog('Logged out'); setCurrentUser(null); }}
-                className="w-full text-left px-4 py-2 hover:bg-rose-50 text-rose-600 font-semibold flex items-center space-x-2"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-                <span>Logout</span>
-              </button>
+          {loginError && (
+            <div className="bg-rose-50 border border-rose-200 text-rose-700 p-3 rounded-lg text-xs flex items-center space-x-2">
+              <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+              <span>{loginError}</span>
             </div>
           )}
-        </div>
 
-      </div>
-    </div>
-
-    <div className="bg-slate-800 border-t border-slate-700 px-4">
-      <div className="max-w-7xl mx-auto flex space-x-1 overflow-x-auto text-xs font-medium py-2">
-        {[
-          { id: 'dashboard', label: 'Dashboard', icon: BarChart2 },
-          { id: 'orders', label: 'Orders & Vouchers', icon: ShoppingCart },
-          { id: 'inventory', label: 'Vendor Inventory', icon: Package },
-          { id: 'returns', label: 'Returns & Damage', icon: RotateCcw },
-          { id: 'settlements', label: 'Vendors', icon: CreditCard }, 
-          { id: 'deliveries', label: 'Delivery Services', icon: Truck },
-          { id: 'cash_ledger', label: 'Cash Management', icon: DollarSign },
-          { id: 'users', label: 'User Management', icon: Users, adminOnly: true },
-          { id: 'logs', label: 'Action Logs', icon: Activity, adminOnly: true },
-        ].map(tab => {
-          if (tab.adminOnly && currentUser.role !== 'Admin') return null;
-          if (currentUser.role === 'Vendor' && ['settlements', 'logs', 'users', 'deliveries', 'cash_ledger'].includes(tab.id)) return null;
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center space-x-2 px-3 py-2 rounded-md transition-all whitespace-nowrap ${
-                isActive 
-                  ? 'bg-indigo-600 text-white font-semibold shadow-sm' 
-                  : 'text-slate-300 hover:bg-slate-700 hover:text-white'
-              }`}
-            >
-              <Icon className="w-4 h-4" />
-              <span>{tab.label}</span>
+          <form onSubmit={handleLogin} className="space-y-4 text-xs">
+            <div>
+              <label className="block font-semibold text-slate-700 mb-1">Username</label>
+              <input 
+                type="text" required value={loginInput.username}
+                onChange={(e) => setLoginInput({ ...loginInput, username: e.target.value })}
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm"
+              />
+            </div>
+            <div>
+              <label className="block font-semibold text-slate-700 mb-1">Password</label>
+              <input 
+                type="password" required value={loginInput.password}
+                onChange={(e) => setLoginInput({ ...loginInput, password: e.target.value })}
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-lg text-sm"
+              />
+            </div>
+            <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-lg text-sm">
+              Sign In
             </button>
-          );
-        })}
-      </div>
-    </div>
-  </header>
-
-  <main className="flex-grow max-w-7xl w-full mx-auto p-4 md:p-6 space-y-6">
-
-    {activeTab === 'dashboard' && (
-      <div className="space-y-6">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
-            <div>
-              <p className="text-xs font-semibold text-slate-500 uppercase">Total Orders</p>
-              <p className="text-2xl font-bold text-slate-800 mt-1">{stats.totalOrders}</p>
-              <p className="text-xs text-indigo-600 mt-1">{stats.pendingOrders} In-Transit / Pending</p>
-            </div>
-            <div className="bg-indigo-50 p-3 rounded-lg text-indigo-600"><ShoppingCart className="w-6 h-6" /></div>
-          </div>
-          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
-            <div>
-              <p className="text-xs font-semibold text-slate-500 uppercase">Total COD Collected</p>
-              <p className="text-2xl font-bold text-emerald-600 mt-1">{(stats.totalCodCollected || 0).toLocaleString()} Ks</p>
-              <p className="text-xs text-slate-400 mt-1">Delivered Waybills</p>
-            </div>
-            <div className="bg-emerald-50 p-3 rounded-lg text-emerald-600"><DollarSign className="w-6 h-6" /></div>
-          </div>
-          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
-            <div>
-              <p className="text-xs font-semibold text-slate-500 uppercase">T&N Revenue (Fees)</p>
-              <p className="text-2xl font-bold text-indigo-600 mt-1">{(stats.totalTnRevenue || 0).toLocaleString()} Ks</p>
-              <p className="text-xs text-slate-400 mt-1">Handling + Store</p>
-            </div>
-            <div className="bg-indigo-50 p-3 rounded-lg text-indigo-600"><Tag className="w-6 h-6" /></div>
-          </div>
-          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
-            <div>
-              <p className="text-xs font-semibold text-slate-500 uppercase">Vendor Stock Value</p>
-              <p className="text-2xl font-bold text-slate-800 mt-1">{(stats.totalStockValue || 0).toLocaleString()} Ks</p>
-              <p className="text-xs text-slate-400 mt-1">Total capital in warehouse</p>
-            </div>
-            <div className="bg-amber-50 p-3 rounded-lg text-amber-600"><Package className="w-6 h-6" /></div>
-          </div>
+          </form>
         </div>
       </div>
-    )}
+    );
+  }
 
-    {/* ORDERS & VOUCHERS TAB */}
-    {activeTab === 'orders' && (
-      <div className="space-y-4">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-            <div className="relative">
-              <button 
-                onClick={() => setShowOrderSearchDropdown(!showOrderSearchDropdown)}
-                className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs px-3 py-2 rounded-lg border border-slate-300 flex items-center space-x-1"
-              >
-                <span>Search by: <strong className="text-indigo-600">{orderSearchMode}</strong></span>
-                <ChevronRight className="w-3.5 h-3.5 ml-1" />
-              </button>
-              {showOrderSearchDropdown && (
-                <div className="absolute left-0 mt-1 w-44 bg-white border border-slate-200 rounded-lg shadow-xl z-20 text-xs py-1">
-                  {['ID', 'DATE', 'VENDOR', 'DELIVERY'].map(mode => (
-                    <button
-                      key={mode}
-                      onClick={() => { setOrderSearchMode(mode); setOrderSearchVal(''); setShowOrderSearchDropdown(false); }}
-                      className={`w-full text-left px-3 py-2 hover:bg-indigo-50 font-medium ${orderSearchMode === mode ? 'text-indigo-600 font-bold bg-indigo-50/50' : 'text-slate-700'}`}
-                    >
-                      {mode === 'ID' ? 'ID / Customer / Phone' : mode === 'DATE' ? 'Date' : mode === 'VENDOR' ? 'Vendor Name' : 'Delivery Service'}
-                    </button>
-                  ))}
-                </div>
-              )}
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans">
+      <header className="bg-slate-900 text-white sticky top-0 z-30 shadow-md">
+        <div className="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+          <div className="flex items-center space-x-3">
+            <div className="bg-indigo-600 p-2 rounded-lg font-extrabold text-xl">T&N</div>
+            <div>
+              <h1 className="font-bold text-lg">T&N Fulfillment System</h1>
+              <p className="text-xs text-slate-400">Logistics & Vendor Management</p>
             </div>
+          </div>
+          <div className="flex items-center space-x-3">
+            <span className="text-xs text-indigo-300 font-bold">{currentUser.name} ({currentUser.role})</span>
+            <button onClick={() => setCurrentUser(null)} className="bg-slate-800 hover:bg-slate-700 p-2 rounded-lg text-slate-300">
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
 
-            {orderSearchMode === 'ID' && (
-              <div className="relative w-full sm:w-64">
+        <div className="bg-slate-800 border-t border-slate-700 px-4">
+          <div className="max-w-7xl mx-auto flex space-x-1 overflow-x-auto text-xs py-2">
+            {[
+              { id: 'dashboard', label: 'Dashboard', icon: BarChart2 },
+              { id: 'orders', label: 'Orders & Vouchers', icon: ShoppingCart },
+              { id: 'inventory', label: 'Vendor Inventory', icon: Package },
+              { id: 'returns', label: 'Returns & Damage', icon: RotateCcw },
+              { id: 'settlements', label: 'Vendors', icon: CreditCard },
+              { id: 'deliveries', label: 'Delivery Services', icon: Truck },
+              { id: 'cash_ledger', label: 'Cash Management', icon: DollarSign },
+              { id: 'users', label: 'Users', icon: Users, adminOnly: true },
+              { id: 'logs', label: 'Logs', icon: Activity, adminOnly: true },
+            ].map(tab => {
+              if (tab.adminOnly && currentUser.role !== 'Admin') return null;
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center space-x-2 px-3 py-2 rounded-md ${activeTab === tab.id ? 'bg-indigo-600 text-white font-semibold' : 'text-slate-300 hover:bg-slate-700'}`}
+                >
+                  <Icon className="w-4 h-4" />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </header>
+
+      <main className="flex-grow max-w-7xl w-full mx-auto p-4 md:p-6 space-y-6">
+        {activeTab === 'dashboard' && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-white p-5 rounded-xl border shadow-sm">
+              <p className="text-xs text-slate-500 uppercase font-semibold">Total Orders</p>
+              <p className="text-2xl font-bold text-slate-800 mt-1">{orders.length}</p>
+            </div>
+            <div className="bg-white p-5 rounded-xl border shadow-sm">
+              <p className="text-xs text-slate-500 uppercase font-semibold">Vendor Inventory Items</p>
+              <p className="text-2xl font-bold text-indigo-600 mt-1">{items.length}</p>
+            </div>
+            <div className="bg-white p-5 rounded-xl border shadow-sm">
+              <p className="text-xs text-slate-500 uppercase font-semibold">Total Returns</p>
+              <p className="text-2xl font-bold text-amber-600 mt-1">{returns.length}</p>
+            </div>
+          </div>
+        )}
+
+        {/* ORDERS & VOUCHERS TAB */}
+        {activeTab === 'orders' && (
+          <div className="space-y-4">
+            <div className="bg-white p-4 rounded-xl border shadow-sm flex justify-between items-center">
+              <div className="relative w-64">
                 <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
                 <input 
-                  type="text" placeholder="Type ID, Phone, Name..."
-                  value={orderSearchVal}
-                  onChange={(e) => setOrderSearchVal(e.target.value)}
-                  className="w-full pl-9 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  type="text" placeholder="Search Order ID / Name..."
+                  value={orderSearchVal} onChange={(e) => setOrderSearchVal(e.target.value)}
+                  className="w-full pl-9 pr-3 py-1.5 border rounded-lg text-xs"
                 />
               </div>
-            )}
-            {orderSearchMode === 'DATE' && (
-              <input type="date" value={orderSearchVal} onChange={(e) => setOrderSearchVal(e.target.value)} className="border border-slate-300 rounded-lg text-xs px-3 py-1.5 bg-white" />
-            )}
-            {orderSearchMode === 'VENDOR' && (
-              <select value={orderSearchVal} onChange={(e) => setOrderSearchVal(e.target.value)} className="border border-slate-300 rounded-lg text-xs px-3 py-1.5 bg-white font-medium">
-                <option value="">-- Select Vendor --</option>
-                {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-              </select>
-            )}
-            {orderSearchMode === 'DELIVERY' && (
-              <select value={orderSearchVal} onChange={(e) => setOrderSearchVal(e.target.value)} className="border border-slate-300 rounded-lg text-xs px-3 py-1.5 bg-white font-medium">
-                <option value="">-- Select Delivery --</option>
-                {deliveries.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
-              </select>
-            )}
-          </div>
-
-          <div className="flex items-center space-x-2">
-            <button onClick={() => exportSelectedToExcel('orders', scopedOrders, selectedOrderIds)} className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm">
-              <Download className="w-3.5 h-3.5" />
-              <span>Export Excel (.xls) {selectedOrderIds.length > 0 ? `(${selectedOrderIds.length})` : ''}</span>
-            </button>
-            {currentUser.role !== 'Vendor' && (
-              <button 
-                onClick={() => {
-                  setNewOrder({
-                    vendorId: '',
-                    customerName: '',
-                    customerPhone: '',
-                    deliveryAddress: '',
-                    deliveryServiceId: deliveries[0]?.id || '',
-                    trackingNo: '',
-                    deliveryFee: 0,
-                    items: [{ itemId: '', qty: 1, discount: 0 }]
-                  });
-                  setShowOrderModal(true);
-                }}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-4 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm transition-colors"
-              >
-                <Plus className="w-4 h-4" />
-                <span>New Order Voucher</span>
+              <button onClick={() => setShowOrderModal(true)} className="bg-indigo-600 text-white text-xs px-4 py-2 rounded-lg font-semibold flex items-center space-x-1">
+                <Plus className="w-4 h-4" /><span>New Order Voucher</span>
               </button>
-            )}
-          </div>
-        </div>
+            </div>
 
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-100 text-slate-600 font-semibold border-b">
-                <tr>
-                  <th className="p-3 w-10 text-center"><input type="checkbox" onChange={(e) => setSelectedOrderIds(e.target.checked ? scopedOrders.map(o => o.id) : [])} checked={selectedOrderIds.length > 0 && selectedOrderIds.length === scopedOrders.length} /></th>
-                  <th className="p-3">Order ID</th>
-                  <th className="p-3">Vendor</th>
-                  <th className="p-3">Customer Info</th>
-                  <th className="p-3">Delivery & Tracking</th>
-                  <th className="p-3">COD Total</th>
-                  <th className="p-3">Status / Stock Qty</th>
-                  <th className="p-3 text-right">Voucher / Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {scopedOrders.map(order => {
-                  const vendor = vendors.find(v => v.id === order.vendorId);
-                  const currentDeliveryName = getDeliveryName(order);
-                  const isCodDone = codCollectedVoucherIds.has(order.id);
-                  const isLocked = currentUser.role === 'Vendor' || isCodDone || (currentUser.role !== 'Admin' && (order.status === 'Delivered' || order.status === 'Cancelled'));
-                  const isSelected = selectedOrderIds.includes(order.id);
-
-                  return (
-                    <tr key={order.id} className={`hover:bg-slate-50 ${order.cancelled ? 'bg-rose-50/50 opacity-80' : ''}`}>
-                      <td className="p-3 text-center"><input type="checkbox" checked={isSelected} onChange={(e) => setSelectedOrderIds(e.target.checked ? [...selectedOrderIds, order.id] : selectedOrderIds.filter(id => id !== order.id))} /></td>
-                      <td className="p-3 font-bold text-indigo-600">
-                        {order.id}
-                        {isCodDone && <span className="ml-1 text-[9px] bg-emerald-100 text-emerald-700 px-1 rounded font-semibold">COD Flow Done</span>}
-                        <div className="text-[10px] text-slate-400 font-normal">{order.createdAt}</div>
-                      </td>
-                      <td className="p-3 font-medium text-slate-700">{vendor ? vendor.name : order.vendorId}</td>
-                      <td className="p-3"><p className="font-semibold text-slate-800">{order.customerName}</p><p className="text-slate-500">{order.customerPhone}</p></td>
-                      <td className="p-3"><p className="font-semibold text-slate-700">{currentDeliveryName}</p><p className="text-slate-400 font-mono text-[10px]">Trk: {order.trackingNo}</p></td>
-                      <td className="p-3 font-bold text-slate-800">{(Number(order.totalCod) || 0).toLocaleString()} Ks</td>
+            <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-100 text-slate-600 font-semibold border-b">
+                  <tr>
+                    <th className="p-3">Order ID</th>
+                    <th className="p-3">Customer</th>
+                    <th className="p-3">Delivery</th>
+                    <th className="p-3">COD Total</th>
+                    <th className="p-3">Status</th>
+                    <th className="p-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {scopedOrders.map(order => (
+                    <tr key={order.id} className="hover:bg-slate-50">
+                      <td className="p-3 font-bold text-indigo-600">{order.id}</td>
+                      <td className="p-3 font-semibold">{order.customerName} ({order.customerPhone})</td>
+                      <td className="p-3">{getDeliveryName(order)}</td>
+                      <td className="p-3 font-bold">{(order.totalCod || 0).toLocaleString()} Ks</td>
                       <td className="p-3">
                         <select 
-                          disabled={isLocked}
                           value={order.status}
                           onChange={(e) => handleUpdateOrderStatus(order.id, e.target.value)}
-                          className={`text-xs font-semibold px-2 py-1 rounded border ${order.cancelled ? 'bg-rose-100 text-rose-700 border-rose-200' : order.status === 'Delivered' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : order.status === 'Partial Return' || order.status === 'Delivery Return' ? 'bg-amber-100 text-amber-800 border-amber-300 font-bold' : 'bg-amber-50 text-amber-700 border-amber-200'} ${isLocked ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'}`}
+                          className="text-xs font-semibold px-2 py-1 rounded border bg-amber-50 text-amber-700"
                         >
                           <option value="Pending">Pending</option>
                           <option value="In-Transit">In-Transit</option>
                           <option value="Delivered">Delivered</option>
                           <option value="Partial Return">Partial Return</option>
                           <option value="Delivery Return">Delivery Return</option>
-                          {currentUser.role === 'Admin' && <option value="Cancelled">Cancelled</option>}
+                          <option value="Cancelled">Cancelled</option>
                         </select>
-                        <div className="text-[10px] text-slate-500 mt-0.5">
-                          Items Qty: {order.items.reduce((s, i) => s + i.qty, 0)} pcs
-                        </div>
                       </td>
-                      <td className="p-3 text-right space-x-1.5 whitespace-nowrap">
-                        <button onClick={() => { setSelectedOrder(order); setShowVoucherModal(true); }} className="bg-slate-100 hover:bg-slate-200 text-slate-700 p-1.5 rounded text-[11px] font-semibold inline-flex items-center space-x-1">
-                          <Printer className="w-3.5 h-3.5" /><span>Voucher</span>
-                        </button>
-                        {currentUser.role === 'Admin' && (order.cancelled || order.status === 'Delivery Return') && !isCodDone && (
-                          <button onClick={() => handleDeleteVoucher(order.id)} className="bg-rose-50 hover:bg-rose-100 text-rose-700 p-1.5 rounded text-[11px] font-semibold inline-flex items-center space-x-1" title="Delete voucher and restore stock">
-                            <Trash2 className="w-3.5 h-3.5" /><span>Delete</span>
-                          </button>
+                      <td className="p-3 text-right space-x-2">
+                        <button onClick={() => { setSelectedOrder(order); setShowVoucherModal(true); }} className="bg-slate-100 p-1.5 rounded font-semibold text-xs">Voucher</button>
+                        {currentUser.role === 'Admin' && order.status !== 'Partial Return' && (
+                          <button onClick={() => handleDeleteVoucher(order.id)} className="bg-rose-50 text-rose-700 p-1.5 rounded font-semibold text-xs">Delete</button>
                         )}
                       </td>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    )}
-
-    {/* VENDOR INVENTORY TAB */}
-    {activeTab === 'inventory' && (
-      <div className="space-y-4">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-            <div className="relative">
-              <button 
-                onClick={() => setShowInvSearchDropdown(!showInvSearchDropdown)}
-                className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs px-3 py-2 rounded-lg border border-slate-300 flex items-center space-x-1"
-              >
-                <span>Search by: <strong className="text-indigo-600">{invSearchMode}</strong></span>
-                <ChevronRight className="w-3.5 h-3.5 ml-1" />
-              </button>
-              {showInvSearchDropdown && (
-                <div className="absolute left-0 mt-1 w-44 bg-white border border-slate-200 rounded-lg shadow-xl z-20 text-xs py-1">
-                  {['ID', 'DATE', 'VENDOR'].map(mode => (
-                    <button
-                      key={mode}
-                      onClick={() => { setInvSearchMode(mode); setInvSearchVal(''); setShowInvSearchDropdown(false); }}
-                      className={`w-full text-left px-3 py-2 hover:bg-indigo-50 font-medium ${invSearchMode === mode ? 'text-indigo-600 font-bold bg-indigo-50/50' : 'text-slate-700'}`}
-                    >
-                      {mode === 'ID' ? 'SKU / Item Name' : mode === 'DATE' ? 'Stock-In Date' : 'Vendor Name'}
-                    </button>
                   ))}
-                </div>
-              )}
+                </tbody>
+              </table>
             </div>
-
-            {invSearchMode === 'ID' && (
-              <div className="relative w-full sm:w-64">
-                <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-                <input 
-                  type="text" placeholder="Search SKU, Item name..."
-                  value={invSearchVal}
-                  onChange={(e) => setInvSearchVal(e.target.value)}
-                  className="w-full pl-9 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-            )}
-            {invSearchMode === 'DATE' && (
-              <input type="date" value={invSearchVal} onChange={(e) => setInvSearchVal(e.target.value)} className="border border-slate-300 rounded-lg text-xs px-3 py-1.5 bg-white" />
-            )}
-            {invSearchMode === 'VENDOR' && (
-              <select value={invSearchVal} onChange={(e) => setInvSearchVal(e.target.value)} className="border border-slate-300 rounded-lg text-xs px-3 py-1.5 bg-white font-medium">
-                <option value="">-- Select Vendor --</option>
-                {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-              </select>
-            )}
           </div>
+        )}
 
-          <div className="flex items-center space-x-2">
-            <button onClick={() => exportSelectedToExcel('inventory_items', scopedItems, selectedItemIds)} className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm">
-              <Download className="w-3.5 h-3.5" />
-              <span>Export Excel (.xls) {selectedItemIds.length > 0 ? `(${selectedItemIds.length})` : ''}</span>
-            </button>
-            {currentUser.role !== 'Vendor' && (
-              <button 
-                onClick={() => {
-                  setIsExistingItemMode(true);
-                  setNewItem({ vendorId: '', existingItemId: '', name: '', category: 'General', price: '', quantity: '', handlingFee: '500', storeChargePerDay: '30', freeDays: '7' });
-                  setShowItemModal(true);
-                }}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-4 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Add New Item Stock</span>
+        {/* INVENTORY TAB */}
+        {activeTab === 'inventory' && (
+          <div className="space-y-4">
+            <div className="bg-white p-4 rounded-xl border shadow-sm flex justify-between items-center">
+              <input type="text" placeholder="Search Inventory..." value={invSearchVal} onChange={(e) => setInvSearchVal(e.target.value)} className="border p-1.5 rounded text-xs w-64" />
+              <button onClick={() => setShowItemModal(true)} className="bg-indigo-600 text-white text-xs px-4 py-2 rounded-lg font-semibold flex items-center space-x-1">
+                <Plus className="w-4 h-4" /><span>Add Stock Item</span>
               </button>
-            )}
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-100 text-slate-600 font-semibold border-b">
-                <tr>
-                  <th className="p-3 w-10 text-center"><input type="checkbox" onChange={(e) => setSelectedItemIds(e.target.checked ? scopedItems.map(i => i.id) : [])} checked={selectedItemIds.length > 0 && selectedItemIds.length === scopedItems.length} /></th>
-                  <th className="p-3">SKU / Item</th>
-                  <th className="p-3">Vendor</th>
-                  <th className="p-3">Selling Price</th>
-                  <th className="p-3">In-Stock Qty</th>
-                  <th className="p-3">Stock-In Date</th>
-                  <th className="p-3">Store Charges (Est.)</th>
-                  <th className="p-3 text-right">Actions (Return / Edit / Cancel)</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {scopedItems.map(item => {
-                  const vendor = vendors.find(v => v.id === item.vendorId);
-                  const storeCharge = calculateStoreCharge(item);
-                  const isSelected = selectedItemIds.includes(item.id);
-                  const todayDateStr = new Date().toISOString().split('T')[0];
-                  const isTodayBatch = item.stockInDate === todayDateStr;
-
-                  return (
+            </div>
+            <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-100 border-b">
+                  <tr><th className="p-3">SKU / Item</th><th className="p-3">Price</th><th className="p-3">In-Stock Qty</th><th className="p-3">Stock Date</th></tr>
+                </thead>
+                <tbody className="divide-y">
+                  {scopedItems.map(item => (
                     <tr key={item.id} className="hover:bg-slate-50">
-                      <td className="p-3 text-center"><input type="checkbox" checked={isSelected} onChange={(e) => setSelectedItemIds(e.target.checked ? [...selectedItemIds, item.id] : selectedItemIds.filter(id => id !== item.id))} /></td>
-                      <td className="p-3">
-                        <p className="font-bold text-slate-800">{item.name}</p>
-                        <p className="text-[10px] text-slate-400 font-mono">{item.sku}</p>
-                      </td>
-                      <td className="p-3 text-slate-600 font-medium">{vendor ? vendor.name : item.vendorId}</td>
-                      <td className="p-3"><p className="font-semibold text-slate-800">{(Number(item.price) || 0).toLocaleString()} Ks</p></td>
-                      <td className="p-3">
-                        <span className={`px-2 py-0.5 rounded font-bold ${(Number(item.quantity) || 0) < 5 ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-800'}`}>
-                          {item.quantity} pcs
-                        </span>
-                      </td>
-                      <td className="p-3 text-slate-500 font-mono text-[11px]">{item.stockInDate}</td>
-                      <td className="p-3">
-                        {storeCharge > 0 ? (
-                          <span className="text-amber-600 font-bold flex items-center"><Clock className="w-3 h-3 mr-1" />{storeCharge.toLocaleString()} Ks</span>
-                        ) : (
-                          <span className="text-emerald-600 text-[11px]">Free Period</span>
-                        )}
-                      </td>
-                      <td className="p-3 text-right space-x-2 whitespace-nowrap">
-                        <button onClick={() => { setTargetReturnItem(item); setReturnForm({ qty: 1, reason: 'Overstock Return' }); setShowReturnModal(true); }} className="text-xs text-amber-600 hover:underline font-semibold">Return Stock</button>
-                        {currentUser.role !== 'Vendor' && isTodayBatch && (
-                          <button onClick={() => { setEditingInventoryItem(item); setEditInventoryForm({ name: item.name, category: item.category || 'General', price: item.price, quantity: item.quantity, handlingFee: item.handlingFee || 500, storeChargePerDay: item.storeChargePerDay || 30, freeDays: item.freeDays || 7 }); setShowEditItemModal(true); }} className="text-xs text-indigo-600 hover:underline font-semibold">Edit</button>
-                        )}
-                        {currentUser.role !== 'Vendor' && isTodayBatch && (
-                          <button onClick={() => handleCancelInventoryItem(item)} className="text-xs text-rose-600 hover:underline font-semibold">Cancel</button>
-                        )}
-                        {currentUser.role !== 'Vendor' && !isTodayBatch && (
-                          <span className="text-[10px] text-slate-400">Edit/Cancel Locked</span>
-                        )}
-                      </td>
+                      <td className="p-3 font-bold">{item.name} <span className="text-[10px] text-slate-400 font-mono">({item.sku})</span></td>
+                      <td className="p-3 font-semibold">{(item.price || 0).toLocaleString()} Ks</td>
+                      <td className="p-3 font-bold text-indigo-600">{item.quantity} pcs</td>
+                      <td className="p-3 text-slate-400">{item.stockInDate}</td>
                     </tr>
-                  );
-                })}
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* RETURNS TAB */}
+        {activeTab === 'returns' && (
+          <div className="bg-white rounded-xl border shadow-sm overflow-hidden p-4">
+            <h3 className="font-bold text-sm mb-3">Return & Damage Records</h3>
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-100 border-b">
+                <tr><th className="p-3">Return ID / Ref Order</th><th className="p-3">Item Name</th><th className="p-3">Qty</th><th className="p-3">Type</th><th className="p-3">Date</th></tr>
+              </thead>
+              <tbody className="divide-y">
+                {scopedReturns.map(ret => (
+                  <tr key={ret.id} className="hover:bg-slate-50">
+                    <td className="p-3 font-bold">{ret.id} <span className="text-[10px] text-indigo-600">({ret.orderId || '-'})</span></td>
+                    <td className="p-3 font-semibold">{ret.itemName}</td>
+                    <td className="p-3 font-bold">{ret.qty}</td>
+                    <td className="p-3"><span className="bg-amber-100 text-amber-800 px-2 py-0.5 rounded text-[10px] font-bold">{ret.type}</span></td>
+                    <td className="p-3 text-slate-400">{ret.date}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
-        </div>
-      </div>
-    )}
+        )}
+      </main>
 
-    {/* RETURNS & DAMAGE TAB */}
-    {activeTab === 'returns' && (
-      <div className="space-y-4">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-            <div className="relative">
-              <button 
-                onClick={() => setShowRetSearchDropdown(!showRetSearchDropdown)}
-                className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs px-3 py-2 rounded-lg border border-slate-300 flex items-center space-x-1"
-              >
-                <span>Search by: <strong className="text-indigo-600">{retSearchMode}</strong></span>
-                <ChevronRight className="w-3.5 h-3.5 ml-1" />
-              </button>
-              {showRetSearchDropdown && (
-                <div className="absolute left-0 mt-1 w-44 bg-white border border-slate-200 rounded-lg shadow-xl z-20 text-xs py-1">
-                  {['ID', 'DATE', 'VENDOR', 'REASON'].map(mode => (
-                    <button
-                      key={mode}
-                      onClick={() => { setRetSearchMode(mode); setRetSearchVal(''); setShowRetSearchDropdown(false); }}
-                      className={`w-full text-left px-3 py-2 hover:bg-indigo-50 font-medium ${retSearchMode === mode ? 'text-indigo-600 font-bold bg-indigo-50/50' : 'text-slate-700'}`}
-                    >
-                      {mode === 'ID' ? 'Return ID / Item' : mode === 'DATE' ? 'Date' : mode === 'VENDOR' ? 'Vendor Name' : 'Reason'}
-                    </button>
-                  ))}
-                </div>
-              )}
+      {/* PDF PRINTABLE VOUCHER MODAL */}
+      {showVoucherModal && selectedOrder && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:p-0 print:bg-white">
+          <style>{`
+            @media print {
+              body * { visibility: hidden; }
+              #voucher-print-area, #voucher-print-area * { visibility: visible; }
+              #voucher-print-area {
+                position: fixed; left: 0; top: 0; width: 100%;
+                max-width: 100% !important; margin: 0 !important;
+                padding: 16px !important; border: none !important;
+                box-shadow: none !important; background: white !important;
+              }
+            }
+          `}</style>
+          <div id="voucher-print-area" className="bg-white rounded-xl max-w-sm w-full p-6 shadow-2xl space-y-4 text-xs font-mono text-slate-800 border">
+            <div className="text-center border-b pb-3">
+              <h2 className="text-lg font-black tracking-wider text-slate-900">DELIVERY VOUCHER</h2>
+              <p className="text-[11px] font-bold text-indigo-600">Order ID: {selectedOrder.id}</p>
+              <p className="text-[10px] text-slate-400">{selectedOrder.createdAt}</p>
             </div>
-
-            {retSearchMode === 'ID' && (
-              <div className="relative w-full sm:w-64">
-                <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-                <input type="text" placeholder="Search Return ID..." value={retSearchVal} onChange={(e) => setRetSearchVal(e.target.value)} className="w-full pl-9 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-              </div>
-            )}
-            {retSearchMode === 'DATE' && (
-              <input type="text" placeholder="e.g. 10/22/2026" value={retSearchVal} onChange={(e) => setRetSearchVal(e.target.value)} className="border border-slate-300 rounded-lg text-xs px-3 py-1.5 bg-white" />
-            )}
-            {retSearchMode === 'VENDOR' && (
-              <select value={retSearchVal} onChange={(e) => setRetSearchVal(e.target.value)} className="border border-slate-300 rounded-lg text-xs px-3 py-1.5 bg-white font-medium">
-                <option value="">-- Select Vendor --</option>
-                {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-              </select>
-            )}
-            {retSearchMode === 'REASON' && (
-              <input type="text" placeholder="Search reason..." value={retSearchVal} onChange={(e) => setRetSearchVal(e.target.value)} className="border border-slate-300 rounded-lg text-xs px-3 py-1.5 bg-white" />
-            )}
+            <div className="border-b pb-2 space-y-0.5">
+              <p className="text-[10px] font-bold uppercase text-slate-400">Deliver To:</p>
+              <p className="font-bold text-slate-800">{selectedOrder.customerName}</p>
+              <p className="text-slate-700">{selectedOrder.customerPhone}</p>
+              <p className="text-slate-500 text-[10px]">{selectedOrder.deliveryAddress}</p>
+              <p className="text-indigo-600 font-bold text-[11px] pt-1">Delivery: {getDeliveryName(selectedOrder)}</p>
+            </div>
+            <div className="space-y-1 text-right pt-2 border-t">
+              <div className="flex justify-between font-extrabold text-sm text-slate-900"><span>Total COD to Pay:</span><span className="text-indigo-600">{(selectedOrder.totalCod || 0).toLocaleString()} Ks</span></div>
+            </div>
+            <div className="pt-2 flex space-x-2 print:hidden">
+              <button onClick={() => setShowVoucherModal(false)} className="w-1/2 bg-slate-100 py-2 rounded font-sans font-semibold text-xs">Close</button>
+              <button onClick={() => window.print()} className="w-1/2 bg-indigo-600 text-white py-2 rounded font-sans font-semibold text-xs flex items-center justify-center space-x-1">
+                <Printer className="w-3.5 h-3.5" /><span>Print / Save PDF</span>
+              </button>
+            </div>
           </div>
+        </div>
+      )}
 
-          <button onClick={() => exportSelectedToExcel('returns', scopedReturns, selectedReturnIds)} className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-2 rounded-lg font-semibold flex items-center space-x-1 shadow-sm">
-            <Download className="w-3.5 h-3.5" />
-            <span>Export Excel (.xls) {selectedReturnIds.length > 0 ? `(${selectedReturnIds.length})` : ''}</span>
-          </button>
-        </div>
-
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-slate-100 text-slate-600 font-semibold border-b">
-              <tr>
-                <th className="p-3 w-10 text-center"><input type="checkbox" onChange={(e) => setSelectedReturnIds(e.target.checked ? scopedReturns.map(r => r.id) : [])} /></th>
-                <th className="p-3">Return ID / Order ID</th>
-                <th className="p-3">Item Name</th>
-                <th className="p-3">Return Type</th>
-                <th className="p-3">Quantity</th>
-                <th className="p-3">Reason</th>
-                <th className="p-3">Status</th>
-                <th className="p-3">Date</th>
-                <th className="p-3 text-right">Actions (Cancel/Edit)</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {scopedReturns.map(ret => {
-                const isSelected = selectedReturnIds.includes(ret.id);
-
-                return (
-                  <tr key={ret.id} className="hover:bg-slate-50">
-                    <td className="p-3 text-center"><input type="checkbox" checked={isSelected} onChange={(e) => setSelectedReturnIds(e.target.checked ? [...selectedReturnIds, ret.id] : selectedReturnIds.filter(id => id !== ret.id))} /></td>
-                    <td className="p-3 font-bold text-slate-700">
-                      {ret.id}
-                      {ret.orderId && <div className="text-[10px] text-indigo-600 font-mono">Ref Order: {ret.orderId}</div>}
-                    </td>
-                    <td className="p-3 font-semibold text-slate-800">{ret.itemName}</td>
-                    <td className="p-3">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${ret.type.includes('Damage') ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>{ret.type}</span>
-                    </td>
-                    <td className="p-3 font-bold">{ret.qty}</td>
-                    <td className="p-3 text-slate-500">{ret.reason}</td>
-                    <td className="p-3 font-medium text-slate-700">{ret.status}</td>
-                    <td className="p-3 text-slate-400 font-mono text-[11px]">{ret.date}</td>
-                    <td className="p-3 text-right space-x-2">
-                      <button onClick={() => { setEditingReturnItem(ret); setEditReturnForm({ itemName: ret.itemName, qty: ret.qty, reason: ret.reason }); setShowEditReturnModal(true); }} className="text-xs text-indigo-600 hover:underline font-semibold">Edit</button>
-                      <button onClick={() => handleCancelReturnItem(ret)} className="text-xs text-rose-600 hover:underline font-bold">Cancel Return</button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    )}
-
-  </main>
-
-  {/* PDF PRINTABLE VOUCHER MODAL */}
-  {showVoucherModal && selectedOrder && (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:p-0 print:bg-white">
-      <style>{`
-        @media print {
-          body * { visibility: hidden; }
-          #voucher-print-area, #voucher-print-area * { visibility: visible; }
-          #voucher-print-area {
-            position: fixed; left: 0; top: 0; width: 100%;
-            max-width: 100% !important; margin: 0 !important;
-            padding: 16px !important; border: none !important;
-            box-shadow: none !important; background: white !important;
-          }
-        }
-      `}</style>
-      <div id="voucher-print-area" className="bg-white rounded-xl max-w-sm w-full p-6 shadow-2xl space-y-4 text-xs font-mono text-slate-800 border border-slate-200">
-        <div className="text-center border-b pb-3">
-          <h2 className="text-lg font-black tracking-wider text-slate-900">DELIVERY VOUCHER</h2>
-          <p className="text-[11px] font-bold text-indigo-600">Order ID: {selectedOrder.id}</p>
-          <p className="text-[10px] text-slate-400">{selectedOrder.createdAt}</p>
-        </div>
-        <div className="border-b pb-2 space-y-0.5">
-          <p className="text-[10px] font-bold uppercase text-slate-400">Sender (Vendor):</p>
-          <p className="font-bold text-slate-800">{vendors.find(v => v.id === selectedOrder.vendorId)?.name || selectedOrder.vendorId}</p>
-        </div>
-        <div className="border-b pb-2 space-y-0.5">
-          <p className="text-[10px] font-bold uppercase text-slate-400">Deliver To:</p>
-          <p className="font-bold text-slate-800">{selectedOrder.customerName}</p>
-          <p className="text-slate-700">{selectedOrder.customerPhone}</p>
-          <p className="text-slate-500 text-[10px]">{selectedOrder.deliveryAddress}</p>
-          <p className="text-indigo-600 font-bold text-[11px] pt-1">Delivery: {getDeliveryName(selectedOrder)}</p>
-        </div>
-        <div className="border-b pb-2">
-          <table className="w-full text-left text-[11px]">
-            <thead>
-              <tr className="border-b text-slate-400"><th className="py-1">Item</th><th className="py-1 text-center">Qty</th><th className="py-1 text-right">Amount</th></tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {selectedOrder.items.map((it, i) => (
-                <tr key={i}><td className="py-1">{it.name}</td><td className="py-1 text-center">{it.qty}</td><td className="py-1 text-right">{(((Number(it.price) || 0) - (Number(it.discount) || 0)) * (Number(it.qty) || 1)).toLocaleString()} Ks</td></tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="space-y-1 text-right">
-          <div className="flex justify-between text-slate-500"><span>Items Subtotal:</span><span>{(Number(selectedOrder.itemTotal) || 0).toLocaleString()} Ks</span></div>
-          <div className="flex justify-between text-slate-500"><span>Delivery Fee:</span><span>{(Number(selectedOrder.deliveryFee) || 0).toLocaleString()} Ks</span></div>
-          <div className="flex justify-between font-extrabold text-sm text-slate-900 border-t pt-1"><span>Total COD to Pay:</span><span className="text-indigo-600">{(Number(selectedOrder.totalCod) || 0).toLocaleString()} Ks</span></div>
-        </div>
-        <div className="pt-3 border-t text-center space-y-1">
-          <p className="text-[9px] text-slate-400 tracking-wider uppercase font-semibold">Supported by T&N Fulfillment Services</p>
-        </div>
-        <div className="pt-2 flex space-x-2 print:hidden">
-          <button onClick={() => setShowVoucherModal(false)} className="w-1/2 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 rounded font-sans font-semibold text-xs">Close</button>
-          <button onClick={() => { window.print(); addLog(`Printed voucher for ${selectedOrder.id}`); }} className="w-1/2 bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded font-sans font-semibold text-xs flex items-center justify-center space-x-1">
-            <Printer className="w-3.5 h-3.5" /><span>Print / Save PDF</span>
-          </button>
-        </div>
-      </div>
+      <footer className="bg-white border-t py-3 text-center text-xs text-slate-500 mt-auto">
+        T&N Fulfillment System • Supported by T&N
+      </footer>
     </div>
-  )}
-
-</div>
-
-```
-
-);
+  );
 }
-
-```
-eof
-
-```
