@@ -47,7 +47,7 @@ export default function App() {
   const [showNotificationDropdown, setShowNotificationDropdown] = useState(false);
   const [showSystemMenu, setShowSystemMenu] = useState(false);
 
-  // Search States
+  // Tab-specific Search States
   const [orderSearchMode, setOrderSearchMode] = useState('ID');
   const [orderSearchVal, setOrderSearchVal] = useState('');
   const [showOrderSearchDropdown, setShowOrderSearchDropdown] = useState(false);
@@ -95,8 +95,8 @@ export default function App() {
   const [showEditReturnModal, setShowEditReturnModal] = useState(false);
   const [editingReturnItem, setEditingReturnItem] = useState<any>(null);
   const [editReturnForm, setEditReturnForm] = useState({ itemName: '', qty: 1, reason: '' });
-  
-  // Advanced Cash Modal State
+
+  // Cash Modal State
   const [cashFlowType, setCashFlowType] = useState('COD_IN');
   const [selectedPartnerId, setSelectedPartnerId] = useState('');
   const [selectedVoucherIds, setSelectedVoucherIds] = useState<string[]>([]);
@@ -256,7 +256,7 @@ export default function App() {
   const handleCustomerPhoneChange = (phoneVal: string) => {
     setNewOrder(prev => {
       const updated = { ...prev, customerPhone: phoneVal };
-      const matchedOrder = orders.find(o => o.customerPhone.trim() === phoneVal.trim());
+      const matchedOrder = orders.find(o => o.customerPhone && o.customerPhone.trim() === phoneVal.trim());
       if (matchedOrder) {
         updated.customerName = matchedOrder.customerName;
         updated.deliveryAddress = matchedOrder.deliveryAddress;
@@ -266,7 +266,7 @@ export default function App() {
   };
 
   const codCollectedVoucherIds = useMemo(() => {
-    const ids = new Set<string>();
+    const ids = new Set();
     cashLedger.filter(c => c.type === 'COD_IN').forEach(c => {
       if (c.referenceId) {
         const matches = c.referenceId.match(/TN-ORD-\d+/g);
@@ -279,7 +279,7 @@ export default function App() {
   }, [cashLedger]);
 
   const recordedVoucherIds = useMemo(() => {
-    const ids = new Set<string>();
+    const ids = new Set();
     cashLedger.filter(c => c.type === 'VENDOR_OUT').forEach(c => {
       if (c.referenceId) {
         const matches = c.referenceId.match(/TN-ORD-\d+/g);
@@ -299,9 +299,9 @@ export default function App() {
     if (invSearchVal.trim()) {
       const q = invSearchVal.toLowerCase();
       if (invSearchMode === 'ID') {
-        res = res.filter(i => i.id.toLowerCase().includes(q) || i.sku.toLowerCase().includes(q) || i.name.toLowerCase().includes(q));
+        res = res.filter(i => (i.id && i.id.toLowerCase().includes(q)) || (i.sku && i.sku.toLowerCase().includes(q)) || (i.name && i.name.toLowerCase().includes(q)));
       } else if (invSearchMode === 'DATE') {
-        res = res.filter(i => i.stockInDate.includes(q));
+        res = res.filter(i => i.stockInDate && i.stockInDate.includes(q));
       } else if (invSearchMode === 'VENDOR') {
         res = res.filter(i => i.vendorId === invSearchVal || (vendors.find(v => v.id === i.vendorId)?.name.toLowerCase().includes(q)));
       }
@@ -320,9 +320,9 @@ export default function App() {
     if (orderSearchVal.trim()) {
       const q = orderSearchVal.toLowerCase();
       if (orderSearchMode === 'ID') {
-        res = res.filter(o => o.id.toLowerCase().includes(q) || o.customerName.toLowerCase().includes(q) || o.customerPhone.toLowerCase().includes(q) || o.trackingNo.toLowerCase().includes(q));
+        res = res.filter(o => (o.id && o.id.toLowerCase().includes(q)) || (o.customerName && o.customerName.toLowerCase().includes(q)) || (o.customerPhone && o.customerPhone.toLowerCase().includes(q)) || (o.trackingNo && o.trackingNo.toLowerCase().includes(q)));
       } else if (orderSearchMode === 'DATE') {
-        res = res.filter(o => o.createdAt.toLowerCase().includes(q));
+        res = res.filter(o => o.createdAt && o.createdAt.toLowerCase().includes(q));
       } else if (orderSearchMode === 'VENDOR') {
         res = res.filter(o => o.vendorId === orderSearchVal || (vendors.find(v => v.id === o.vendorId)?.name.toLowerCase().includes(q)));
       } else if (orderSearchMode === 'DELIVERY') {
@@ -340,13 +340,13 @@ export default function App() {
     if (retSearchVal.trim()) {
       const q = retSearchVal.toLowerCase();
       if (retSearchMode === 'ID') {
-        res = res.filter(r => r.id.toLowerCase().includes(q) || r.itemName.toLowerCase().includes(q) || (r.orderId && r.orderId.toLowerCase().includes(q)));
+        res = res.filter(r => (r.id && r.id.toLowerCase().includes(q)) || (r.itemName && r.itemName.toLowerCase().includes(q)) || (r.orderId && r.orderId.toLowerCase().includes(q)));
       } else if (retSearchMode === 'DATE') {
-        res = res.filter(r => r.date.toLowerCase().includes(q));
+        res = res.filter(r => r.date && r.date.toLowerCase().includes(q));
       } else if (retSearchMode === 'VENDOR') {
         res = res.filter(r => r.vendorId === retSearchVal || (vendors.find(v => v.id === r.vendorId)?.name.toLowerCase().includes(q)));
       } else if (retSearchMode === 'REASON') {
-        res = res.filter(r => r.reason.toLowerCase().includes(q));
+        res = res.filter(r => r.reason && r.reason.toLowerCase().includes(q));
       }
     }
     return res;
@@ -357,11 +357,11 @@ export default function App() {
     if (cashSearchVal.trim()) {
       const q = cashSearchVal.toLowerCase();
       if (cashSearchMode === 'ID') {
-        res = res.filter(c => c.id.toLowerCase().includes(q) || (c.referenceId && c.referenceId.toLowerCase().includes(q)) || (c.description && c.description.toLowerCase().includes(q)));
+        res = res.filter(c => (c.id && c.id.toLowerCase().includes(q)) || (c.referenceId && c.referenceId.toLowerCase().includes(q)) || (c.description && c.description.toLowerCase().includes(q)));
       } else if (cashSearchMode === 'DATE') {
-        res = res.filter(c => c.date.toLowerCase().includes(q));
+        res = res.filter(c => c.date && c.date.toLowerCase().includes(q));
       } else if (cashSearchMode === 'TYPE') {
-        res = res.filter(c => c.type.toLowerCase().includes(q));
+        res = res.filter(c => c.type && c.type.toLowerCase().includes(q));
       }
     }
     return res;
@@ -385,19 +385,21 @@ export default function App() {
   function calculateOrderStoreCharges(order: any) {
     let totalStore = 0;
     const orderDate = new Date(order.createdAt || Date.now());
-    order.items.forEach((ordItem: any) => {
-      const stockItem = items.find(i => i.id === ordItem.itemId);
-      if (stockItem) {
-        const stockIn = new Date(stockItem.stockInDate);
-        const diffDays = Math.floor((orderDate.getTime() - stockIn.getTime()) / (1000 * 60 * 60 * 24));
-        const freeDays = stockItem.freeDays !== undefined ? Number(stockItem.freeDays) : 7;
-        const dailyFee = stockItem.storeChargePerDay !== undefined ? Number(stockItem.storeChargePerDay) : 30;
-        if (diffDays > freeDays) {
-          const extraDays = diffDays - freeDays;
-          totalStore += extraDays * dailyFee * ordItem.qty;
+    if (order.items) {
+      order.items.forEach((ordItem: any) => {
+        const stockItem = items.find(i => i.id === ordItem.itemId);
+        if (stockItem) {
+          const stockIn = new Date(stockItem.stockInDate);
+          const diffDays = Math.floor((orderDate.getTime() - stockIn.getTime()) / (1000 * 60 * 60 * 24));
+          const freeDays = stockItem.freeDays !== undefined ? Number(stockItem.freeDays) : 7;
+          const dailyFee = stockItem.storeChargePerDay !== undefined ? Number(stockItem.storeChargePerDay) : 30;
+          if (diffDays > freeDays) {
+            const extraDays = diffDays - freeDays;
+            totalStore += extraDays * dailyFee * ordItem.qty;
+          }
         }
-      }
-    });
+      });
+    }
     return totalStore;
   }
 
@@ -533,7 +535,6 @@ export default function App() {
     }
   };
 
-  // LOGIC 1 & 2: Delivery Return Cancel Logic & Delivered Protection
   const handleCancelReturnItem = async (ret: any) => {
     const targetOrder = orders.find(o => o.id === ret.orderId);
     if (targetOrder && targetOrder.status === 'Delivered') {
@@ -545,7 +546,7 @@ export default function App() {
       try {
         await fetch(`${API_BASE_URL}/api/returns/${ret.id}`, { method: 'DELETE' });
       } catch (e) {}
-
+      
       if (targetOrder) {
         const updatedOrder = {
           ...targetOrder,
@@ -569,7 +570,6 @@ export default function App() {
     }
   };
 
-  // LOGIC 5: Status Change Auto-Sync
   const handleUpdateOrderStatus = async (orderId: string, newStatus: string, newTracking?: string) => {
     const targetOrder = orders.find(o => o.id === orderId);
     if (!targetOrder) return;
@@ -680,7 +680,6 @@ export default function App() {
     addLog(`Updated Order ${orderId} status to '${newStatus}'`);
   };
 
-  // LOGIC 3 & 4: Delete Voucher with Stock Sync & Partial Return Block
   const handleDeleteVoucher = async (orderId: string) => {
     if (codCollectedVoucherIds.has(orderId)) {
       alert('ဤ Voucher သည် COD ငွေအဝင်စာရင်း ပြီးစီးပြီးဖြစ်သဖြင့် ဖျက်၍မရပါ။');
@@ -731,12 +730,29 @@ export default function App() {
     }
   };
 
+  const getTabIcon = (tabId: string) => {
+    switch (tabId) {
+      case 'dashboard': return BarChart2;
+      case 'orders': return ShoppingCart;
+      case 'inventory': return Package;
+      case 'returns': return RotateCcw;
+      case 'settlements': return CreditCard;
+      case 'deliveries': return Truck;
+      case 'cash_ledger': return DollarSign;
+      case 'users': return Users;
+      case 'logs': return Activity;
+      default: return Package;
+    }
+  };
+
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 font-sans">
         <div className="bg-white rounded-2xl max-w-md w-full p-8 shadow-2xl border border-slate-700 space-y-6">
           <div className="text-center space-y-2">
-            <div className="bg-indigo-600 text-white p-3 rounded-2xl inline-block shadow-lg font-black text-xl">T&N</div>
+            <div className="bg-indigo-600 text-white p-3 rounded-2xl inline-block shadow-lg font-black text-xl">
+              T&N
+            </div>
             <h1 className="text-2xl font-bold text-slate-900">T&N Fulfillment System</h1>
             <p className="text-xs text-slate-500">Vendor & Logistics Management Platform</p>
           </div>
@@ -777,14 +793,17 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans">
       <header className="bg-slate-900 text-white sticky top-0 z-30 shadow-md">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+        <div className="max-w-7xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-4">
           <div className="flex items-center space-x-3">
-            <div className="bg-indigo-600 p-2 rounded-lg font-extrabold text-xl">T&N</div>
+            <div className="bg-indigo-600 text-white p-2 rounded-lg font-extrabold text-xl tracking-wider">
+              T&N
+            </div>
             <div>
               <h1 className="font-bold text-lg leading-none">T&N Fulfillment System</h1>
               <p className="text-xs text-slate-400 mt-1">Vendor & Logistics Management Platform</p>
             </div>
           </div>
+
           <div className="flex items-center space-x-3">
             <span className="text-xs text-indigo-300 font-bold">{currentUser.name} ({currentUser.role})</span>
             <button onClick={() => setCurrentUser(null)} className="bg-slate-800 hover:bg-slate-700 p-2 rounded-lg text-slate-300">
@@ -796,18 +815,18 @@ export default function App() {
         <div className="bg-slate-800 border-t border-slate-700 px-4">
           <div className="max-w-7xl mx-auto flex space-x-1 overflow-x-auto text-xs py-2">
             {[
-              { id: 'dashboard', label: 'Dashboard', icon: BarChart2 },
-              { id: 'orders', label: 'Orders & Vouchers', icon: ShoppingCart },
-              { id: 'inventory', label: 'Vendor Inventory', icon: Package },
-              { id: 'returns', label: 'Returns & Damage', icon: RotateCcw },
-              { id: 'settlements', label: 'Vendors', icon: CreditCard }, 
-              { id: 'deliveries', label: 'Delivery Services', icon: Truck },
-              { id: 'cash_ledger', label: 'Cash Management', icon: DollarSign },
-              { id: 'users', label: 'User Management', icon: Users, adminOnly: true },
-              { id: 'logs', label: 'Action Logs', icon: Activity, adminOnly: true },
+              { id: 'dashboard', label: 'Dashboard' },
+              { id: 'orders', label: 'Orders & Vouchers' },
+              { id: 'inventory', label: 'Vendor Inventory' },
+              { id: 'returns', label: 'Returns & Damage' },
+              { id: 'settlements', label: 'Vendors' }, 
+              { id: 'deliveries', label: 'Delivery Services' },
+              { id: 'cash_ledger', label: 'Cash Management' },
+              { id: 'users', label: 'User Management', adminOnly: true },
+              { id: 'logs', label: 'Action Logs', adminOnly: true },
             ].map(tab => {
               if (tab.adminOnly && currentUser.role !== 'Admin') return null;
-              const Icon = tab.icon;
+              const Icon = getTabIcon(tab.id);
               return (
                 <button
                   key={tab.id}
@@ -972,7 +991,7 @@ export default function App() {
                   <tr className="border-b text-slate-400"><th className="py-1">Item</th><th className="py-1 text-center">Qty</th><th className="py-1 text-right">Amount</th></tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {selectedOrder.items.map((it: any, i: number) => (
+                  {selectedOrder.items && selectedOrder.items.map((it: any, i: number) => (
                     <tr key={i}><td className="py-1">{it.name}</td><td className="py-1 text-center">{it.qty}</td><td className="py-1 text-right">{(((Number(it.price) || 0) - (Number(it.discount) || 0)) * (Number(it.qty) || 1)).toLocaleString()} Ks</td></tr>
                   ))}
                 </tbody>
@@ -999,4 +1018,7 @@ export default function App() {
 }
 ```
 
-```
+### Summary of Changes:
+1. **Fixed Runtime TypeError**: Replaced potential dynamic icon call bugs and undefined render calls with a static helper function `getTabIcon`.
+2. **Safe Property Access**: Added null-safe property checks across all array mappings and filter methods (e.g., `order.customerPhone`, `order.items`).
+3. **Preserved Logics**: Maintained all custom features—including Delivery Return Cancellation, Delivered Protection, Order/Stock synchronization on Delete, and Partial Return delete blocking.
