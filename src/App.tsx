@@ -29,7 +29,17 @@ const INITIAL_LOGS = [
 ];
 
 export default function App() {
-  const [usersList, setUsersList] = useState(INITIAL_USERS);
+  const [usersList, setUsersList] = useState(() => {
+    const saved = localStorage.getItem('tn_users_list');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      } catch (e) {}
+    }
+    return INITIAL_USERS;
+  });
+
   const [currentUser, setCurrentUser] = useState(null);
   const [loginInput, setLoginInput] = useState({ username: '', password: '' });
   const [loginError, setLoginError] = useState('');
@@ -145,12 +155,29 @@ export default function App() {
   });
 
   useEffect(() => {
+    if (usersList.length > 0) {
+      localStorage.setItem('tn_users_list', JSON.stringify(usersList));
+    }
+  }, [usersList]);
+
+  useEffect(() => {
     async function fetchData() {
       try {
         const resUsers = await fetch(`${API_BASE_URL}/api/users`);
         if (resUsers.ok) {
           const dataUsers = await resUsers.json();
-          if (Array.isArray(dataUsers) && dataUsers.length > 0) setUsersList(dataUsers);
+          if (Array.isArray(dataUsers) && dataUsers.length > 0) {
+            setUsersList(prev => {
+              const map = new Map();
+              dataUsers.forEach(u => map.set(u.id, u));
+              prev.forEach(u => {
+                if (!map.has(u.id)) {
+                  map.set(u.id, u);
+                }
+              });
+              return Array.from(map.values());
+            });
+          }
         }
 
         const resVendors = await fetch(`${API_BASE_URL}/api/vendors`);
@@ -551,7 +578,10 @@ export default function App() {
       try {
         const parsed = JSON.parse(event.target.result);
         if (parsed.orders && parsed.vendors) {
-          if (parsed.usersList) setUsersList(parsed.usersList);
+          if (parsed.usersList) {
+            setUsersList(parsed.usersList);
+            localStorage.setItem('tn_users_list', JSON.stringify(parsed.usersList));
+          }
           if (parsed.vendors) setVendors(parsed.vendors);
           if (parsed.deliveries) setDeliveries(parsed.deliveries);
           if (parsed.items) setItems(parsed.items);
@@ -574,6 +604,7 @@ export default function App() {
     e.preventDefault();
     if (!newUser.username) return;
 
+    let updatedList = [];
     if (editingUser) {
       const updatedUser = {
         ...editingUser,
@@ -583,7 +614,7 @@ export default function App() {
         role: newUser.role,
         vendorId: newUser.role === 'Vendor' ? newUser.vendorId : ''
       };
-      setUsersList(usersList.map(u => u.id === editingUser.id ? updatedUser : u));
+      updatedList = usersList.map(u => u.id === editingUser.id ? updatedUser : u);
       addLog(`Updated user account: ${newUser.username}`);
     } else {
       const userObj = {
@@ -594,9 +625,11 @@ export default function App() {
         role: newUser.role,
         vendorId: newUser.role === 'Vendor' ? newUser.vendorId : ''
       };
-      setUsersList([...usersList, userObj]);
+      updatedList = [...usersList, userObj];
       addLog(`Created new user account: ${userObj.username}`);
     }
+    setUsersList(updatedList);
+    localStorage.setItem('tn_users_list', JSON.stringify(updatedList));
     setShowUserModal(false);
     setEditingUser(null);
     setNewUser({ username: '', password: '', name: '', role: 'Staff', vendorId: '' });
@@ -604,7 +637,9 @@ export default function App() {
 
   const handleDeleteUser = async (userId) => {
     if (confirm('ဤ User အကောင့်ကို ဖျက်ရန် သေချာပါသလား?')) {
-      setUsersList(usersList.filter(u => u.id !== userId));
+      const updatedList = usersList.filter(u => u.id !== userId);
+      setUsersList(updatedList);
+      localStorage.setItem('tn_users_list', JSON.stringify(updatedList));
       addLog(`Deleted user ID ${userId}`);
     }
   };
