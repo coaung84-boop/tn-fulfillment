@@ -1,158 +1,49 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  Package, ShoppingCart, Truck, DollarSign, Users, 
-  RotateCcw, ShieldCheck, Activity, Search, Plus, Trash2, 
-  Clock, AlertTriangle, Printer, Download, Upload,
-  ChevronRight, LogOut, FileSpreadsheet, Tag,
-  BarChart2, UserPlus, Bell, CreditCard, Menu, TrendingUp, PieChart, Table, ArrowUpDown
+  Package, ShoppingCart, Truck, DollarSign, Users, FileText, 
+  RotateCcw, ShieldCheck, Activity, Search, Plus, Edit, Trash2, 
+  CheckCircle, Clock, AlertTriangle, Eye, Printer, Download, Upload,
+  ArrowUpRight, ArrowDownRight, RefreshCw, Lock, UserCheck, Key,
+  BarChart2, Filter, ChevronRight, LogOut, FileSpreadsheet, Tag, TrendingUp,
+  PieChart, Table, ArrowUpDown, UserPlus, CheckSquare, Square, Bell, HardDrive, Shield, CreditCard, Menu
 } from 'lucide-react';
 
 const API_BASE_URL = 'https://tn-backend-j1vg.onrender.com';
 
-interface User {
-  id: string;
-  username: string;
-  password?: string;
-  name: string;
-  role: string;
-  vendorId?: string;
-}
-
-interface Vendor {
-  id: string;
-  name: string;
-  phone: string;
-  address: string;
-  bankAccount: string;
-  freeStorageDays?: number;
-  dailyStoreFee?: number;
-}
-
-interface Delivery {
-  id: string;
-  name: string;
-  phone: string;
-  address: string;
-  bankAccount: string;
-}
-
-interface InventoryItem {
-  id: string;
-  vendorId: string;
-  name: string;
-  category?: string;
-  price: number;
-  cost?: number;
-  quantity: number;
-  damagedQty?: number;
-  sku: string;
-  stockInDate: string;
-  handlingFee?: number;
-  storeChargePerDay?: number;
-  freeDays?: number;
-  orderId?: string;
-}
-
-interface OrderItem {
-  itemId: string;
-  name: string;
-  qty: number;
-  price: number;
-  discount: number;
-  status?: string;
-}
-
-interface Order {
-  id: string;
-  vendorId: string;
-  customerName: string;
-  customerPhone: string;
-  deliveryAddress: string;
-  deliveryService: string;
-  deliveryServiceId?: string;
-  trackingNo: string;
-  status: string;
-  cancelled: boolean;
-  items: OrderItem[];
-  itemTotal: number;
-  deliveryFee: number;
-  totalCod: number;
-  tnHandlingFee?: number;
-  tnStoreFee?: number;
-  codCollected?: boolean;
-  settlementStatus?: string;
-  createdAt: string;
-  updatedBy?: string;
-}
-
-interface ReturnItem {
-  id: string;
-  orderId?: string;
-  itemId?: string;
-  vendorId: string;
-  itemName: string;
-  qty: number;
-  type: string;
-  reason: string;
-  status: string;
-  date: string;
-}
-
-interface CashRecord {
-  id: string;
-  type: string;
-  referenceId: string;
-  amount: number;
-  description: string;
-  date: string;
-  createdBy: string;
-}
-
-interface LogRecord {
-  id: string;
-  user: string;
-  role: string;
-  action: string;
-  timestamp: string;
-}
-
-interface NotificationItem {
-  id: string;
-  title: string;
-  message: string;
-  type: string;
-  isRead: boolean;
-  createdAt: string;
-}
-
-const INITIAL_USERS: User[] = [
+const INITIAL_USERS = [
   { id: 'USR-001', username: "admin", password: "admin123", name: "System Admin", role: "Admin", vendorId: "" },
   { id: 'USR-002', username: "staff", password: "staff123", name: "Operations Staff", role: "Staff", vendorId: "" },
 ];
 
-const INITIAL_DELIVERIES: Delivery[] = [
+const INITIAL_VENDORS: any[] = [];
+const INITIAL_DELIVERIES = [
   { id: 'DEL-101', name: 'Royal Express', phone: '095000111', address: 'Yangon Main Hub', bankAccount: 'KBZPay: 095000111 (Royal)' },
   { id: 'DEL-102', name: 'Ninja Van', phone: '096000222', address: 'Mandalay Hub', bankAccount: 'KBZPay: 096000222 (Ninja)' },
 ];
 
+const INITIAL_ITEMS: any[] = [];
+const INITIAL_ORDERS: any[] = [];
+const INITIAL_RETURNS: any[] = [];
+const INITIAL_LOGS = [
+  { id: 'LOG-101', user: 'System', role: 'Admin', action: 'System Clean Slate Initialized', timestamp: new Date().toLocaleString() }
+];
+
 export default function App() {
-  const [usersList, setUsersList] = useState<User[]>(INITIAL_USERS);
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [usersList, setUsersList] = useState<any[]>(INITIAL_USERS);
+  const [currentUser, setCurrentUser] = useState<any>(null);
   const [loginInput, setLoginInput] = useState({ username: '', password: '' });
   const [loginError, setLoginError] = useState('');
 
   const [activeTab, setActiveTab] = useState('dashboard');
   
-  const [vendors, setVendors] = useState<Vendor[]>([]);
-  const [deliveries, setDeliveries] = useState<Delivery[]>(INITIAL_DELIVERIES);
-  const [items, setItems] = useState<InventoryItem[]>([]);
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [returns, setReturns] = useState<ReturnItem[]>([]);
-  const [logs, setLogs] = useState<LogRecord[]>([
-    { id: 'LOG-101', user: 'System', role: 'Admin', action: 'System Initialized', timestamp: new Date().toLocaleString() }
-  ]);
-  const [cashLedger, setCashLedger] = useState<CashRecord[]>([]);
-  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [vendors, setVendors] = useState<any[]>(INITIAL_VENDORS);
+  const [deliveries, setDeliveries] = useState<any[]>(INITIAL_DELIVERIES);
+  const [items, setItems] = useState<any[]>(INITIAL_ITEMS);
+  const [orders, setOrders] = useState<any[]>(INITIAL_ORDERS);
+  const [returns, setReturns] = useState<any[]>(INITIAL_RETURNS);
+  const [logs, setLogs] = useState<any[]>(INITIAL_LOGS);
+  const [cashLedger, setCashLedger] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<any[]>([]);
   const [showNotificationDropdown, setShowNotificationDropdown] = useState(false);
   const [showSystemMenu, setShowSystemMenu] = useState(false);
 
@@ -180,14 +71,12 @@ export default function App() {
   const [selectedReturnIds, setSelectedReturnIds] = useState<string[]>([]);
   const [selectedCashIds, setSelectedCashIds] = useState<string[]>([]);
 
-  // Chart States
   const [chartMetric, setChartMetric] = useState('qty');
   const [chartType, setChartType] = useState('line');
   const [sortOrder, setSortOrder] = useState('desc');
   const [hoveredPoint, setHoveredPoint] = useState<any>(null);
 
-  // Modals
-  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [showVoucherModal, setShowVoucherModal] = useState(false);
   const [showItemModal, setShowItemModal] = useState(false);
@@ -199,12 +88,12 @@ export default function App() {
 
   // Edit Inventory Item Modal State
   const [showEditItemModal, setShowEditItemModal] = useState(false);
-  const [editingInventoryItem, setEditingInventoryItem] = useState<InventoryItem | null>(null);
-  const [editInventoryForm, setEditInventoryForm] = useState({ name: '', category: '', price: 0, quantity: 0, handlingFee: 500, storeChargePerDay: 30, freeDays: 7 });
+  const [editingInventoryItem, setEditingInventoryItem] = useState<any>(null);
+  const [editInventoryForm, setEditInventoryForm] = useState({ name: '', category: '', price: '', quantity: '', handlingFee: '', storeChargePerDay: '', freeDays: '' });
 
   // Edit Return Modal State
   const [showEditReturnModal, setShowEditReturnModal] = useState(false);
-  const [editingReturnItem, setEditingReturnItem] = useState<ReturnItem | null>(null);
+  const [editingReturnItem, setEditingReturnItem] = useState<any>(null);
   const [editReturnForm, setEditReturnForm] = useState({ itemName: '', qty: 1, reason: '' });
   
   // Advanced Cash Modal State
@@ -216,14 +105,16 @@ export default function App() {
 
   // Partial Return Modal State
   const [showPartialModal, setShowPartialModal] = useState(false);
-  const [targetPartialOrder, setTargetPartialOrder] = useState<Order | null>(null);
+  const [targetPartialOrder, setTargetPartialOrder] = useState<any>(null);
   const [partialItemsForm, setPartialItemsForm] = useState<any[]>([]);
 
-  const [editingVendor, setEditingVendor] = useState<Vendor | null>(null);
-  const [editingDelivery, setEditingDelivery] = useState<Delivery | null>(null);
-  const [targetReturnItem, setTargetReturnItem] = useState<InventoryItem | null>(null);
+  const [editingVendor, setEditingVendor] = useState<any>(null);
+  const [editingDelivery, setEditingDelivery] = useState<any>(null);
+
+  const [targetReturnItem, setTargetReturnItem] = useState<any>(null);
   const [returnForm, setReturnForm] = useState({ qty: 1, reason: 'Overstock Return' });
-  const [editingUser, setEditingUser] = useState<User | null>(null);
+
+  const [editingUser, setEditingUser] = useState<any>(null);
 
   const [newUser, setNewUser] = useState({ username: '', password: '', name: '', role: 'Staff', vendorId: '' });
   const [newVendor, setNewVendor] = useState({ name: '', phone: '', address: '', bankAccount: '' });
@@ -235,11 +126,11 @@ export default function App() {
     existingItemId: '',
     name: '', 
     category: 'General', 
-    price: 0, 
-    quantity: 0, 
-    handlingFee: 500, 
-    storeChargePerDay: 30, 
-    freeDays: 7 
+    price: '', 
+    quantity: '', 
+    handlingFee: '500', 
+    storeChargePerDay: '30', 
+    freeDays: '7' 
   });
 
   const [newOrder, setNewOrder] = useState({
@@ -258,46 +149,53 @@ export default function App() {
       try {
         const resUsers = await fetch(`${API_BASE_URL}/api/users`);
         if (resUsers.ok) {
-          const data = await resUsers.json();
-          if (Array.isArray(data) && data.length > 0) setUsersList(data);
+          const dataUsers = await resUsers.json();
+          if (Array.isArray(dataUsers) && dataUsers.length > 0) setUsersList(dataUsers);
         }
+
         const resVendors = await fetch(`${API_BASE_URL}/api/vendors`);
         if (resVendors.ok) {
-          const data = await resVendors.json();
-          if (Array.isArray(data)) setVendors(data);
+          const dataVendors = await resVendors.json();
+          if (Array.isArray(dataVendors)) setVendors(dataVendors);
         }
+
         const resDeliveries = await fetch(`${API_BASE_URL}/api/deliveries`);
         if (resDeliveries.ok) {
-          const data = await resDeliveries.json();
-          if (Array.isArray(data)) setDeliveries(data);
+          const dataDeliveries = await resDeliveries.json();
+          if (Array.isArray(dataDeliveries)) setDeliveries(dataDeliveries);
         }
+
         const resItems = await fetch(`${API_BASE_URL}/api/inventory`);
         if (resItems.ok) {
-          const data = await resItems.json();
-          if (Array.isArray(data)) setItems(data);
+          const dataItems = await resItems.json();
+          if (Array.isArray(dataItems)) setItems(dataItems);
         }
+
         const resOrders = await fetch(`${API_BASE_URL}/api/orders`);
         if (resOrders.ok) {
-          const data = await resOrders.json();
-          if (Array.isArray(data)) setOrders(data);
+          const dataOrders = await resOrders.json();
+          if (Array.isArray(dataOrders)) setOrders(dataOrders);
         }
+
         const resReturns = await fetch(`${API_BASE_URL}/api/returns`);
         if (resReturns.ok) {
-          const data = await resReturns.json();
-          if (Array.isArray(data)) setReturns(data);
+          const dataReturns = await resReturns.json();
+          if (Array.isArray(dataReturns)) setReturns(dataReturns);
         }
+
         const resCash = await fetch(`${API_BASE_URL}/api/cash-ledger`);
         if (resCash.ok) {
-          const data = await resCash.json();
-          if (Array.isArray(data)) setCashLedger(data);
+          const dataCash = await resCash.json();
+          if (Array.isArray(dataCash)) setCashLedger(dataCash);
         }
+
         const resNoti = await fetch(`${API_BASE_URL}/api/notifications`);
         if (resNoti.ok) {
-          const data = await resNoti.json();
-          if (Array.isArray(data)) setNotifications(data);
+          const dataNoti = await resNoti.json();
+          if (Array.isArray(dataNoti)) setNotifications(dataNoti);
         }
       } catch (err) {
-        console.error('Data Sync Error:', err);
+        console.error('API Sync Error:', err);
       }
     }
     fetchData();
@@ -305,7 +203,7 @@ export default function App() {
 
   const addLog = (actionText: string) => {
     if (!currentUser) return;
-    const newLog: LogRecord = {
+    const newLog = {
       id: `LOG-${Date.now().toString().slice(-4)}`,
       user: currentUser.name,
       role: currentUser.role,
@@ -316,7 +214,7 @@ export default function App() {
   };
 
   const addNotification = async (title: string, message: string, type = 'info') => {
-    const notiObj: NotificationItem = {
+    const notiObj = {
       id: `NOTI-${Date.now().toString().slice(-4)}`,
       title,
       message,
@@ -345,7 +243,7 @@ export default function App() {
     }
   };
 
-  const getDeliveryName = (order: Order) => {
+  const getDeliveryName = (order: any) => {
     if (order.deliveryServiceId) {
       const found = deliveries.find(d => d.id === order.deliveryServiceId);
       if (found) return found.name;
@@ -355,12 +253,26 @@ export default function App() {
     return order.deliveryService || 'Unassigned';
   };
 
+  const handleCustomerPhoneChange = (phoneVal: string) => {
+    setNewOrder(prev => {
+      const updated = { ...prev, customerPhone: phoneVal };
+      const matchedOrder = orders.find(o => o.customerPhone.trim() === phoneVal.trim());
+      if (matchedOrder) {
+        updated.customerName = matchedOrder.customerName;
+        updated.deliveryAddress = matchedOrder.deliveryAddress;
+      }
+      return updated;
+    });
+  };
+
   const codCollectedVoucherIds = useMemo(() => {
     const ids = new Set<string>();
     cashLedger.filter(c => c.type === 'COD_IN').forEach(c => {
       if (c.referenceId) {
         const matches = c.referenceId.match(/TN-ORD-\d+/g);
-        if (matches) matches.forEach(id => ids.add(id));
+        if (matches) {
+          matches.forEach(id => ids.add(id));
+        }
       }
     });
     return ids;
@@ -371,7 +283,9 @@ export default function App() {
     cashLedger.filter(c => c.type === 'VENDOR_OUT').forEach(c => {
       if (c.referenceId) {
         const matches = c.referenceId.match(/TN-ORD-\d+/g);
-        if (matches) matches.forEach(id => ids.add(id));
+        if (matches) {
+          matches.forEach(id => ids.add(id));
+        }
       }
     });
     return ids;
@@ -453,13 +367,13 @@ export default function App() {
     return res;
   }, [cashLedger, cashSearchMode, cashSearchVal]);
 
-  function calculateStoreCharge(item: InventoryItem, targetDate = new Date()) {
+  function calculateStoreCharge(item: any, targetDate = new Date()) {
     const vendor = vendors.find(v => v.id === item.vendorId);
     const stockIn = new Date(item.stockInDate);
     const diffDays = Math.floor((targetDate.getTime() - stockIn.getTime()) / (1000 * 60 * 60 * 24));
     
-    const freeDays = item.freeDays !== undefined ? Number(item.freeDays) : (vendor?.freeStorageDays ?? 7);
-    const dailyFee = item.storeChargePerDay !== undefined ? Number(item.storeChargePerDay) : (vendor?.dailyStoreFee ?? 30);
+    const freeDays = item.freeDays !== undefined ? Number(item.freeDays) : (vendor ? vendor.freeStorageDays : 7);
+    const dailyFee = item.storeChargePerDay !== undefined ? Number(item.storeChargePerDay) : (vendor ? vendor.dailyStoreFee : 30);
 
     if (diffDays > freeDays) {
       const extraDays = diffDays - freeDays;
@@ -468,10 +382,10 @@ export default function App() {
     return 0;
   }
 
-  function calculateOrderStoreCharges(order: Order) {
+  function calculateOrderStoreCharges(order: any) {
     let totalStore = 0;
     const orderDate = new Date(order.createdAt || Date.now());
-    order.items.forEach(ordItem => {
+    order.items.forEach((ordItem: any) => {
       const stockItem = items.find(i => i.id === ordItem.itemId);
       if (stockItem) {
         const stockIn = new Date(stockItem.stockInDate);
@@ -609,7 +523,7 @@ export default function App() {
     reader.readAsText(file);
   };
 
-  const handleCancelInventoryItem = async (item: InventoryItem) => {
+  const handleCancelInventoryItem = async (item: any) => {
     if (confirm(`သတိပေးချက်: Stock item "${item.name}" ကို Cancel လုပ်၍ စာရင်းမှ ဖျက်ပစ်ပြီး သက်ဆိုင်ရာ လက်ကျန်ဒေတာများကို Update လုပ်မည် သေချာပါသလား?`)) {
       try {
         await fetch(`${API_BASE_URL}/api/inventory/${item.id}`, { method: 'DELETE' });
@@ -620,7 +534,7 @@ export default function App() {
   };
 
   // LOGIC 1 & 2: Delivery Return Cancel Logic & Delivered Protection
-  const handleCancelReturnItem = async (ret: ReturnItem) => {
+  const handleCancelReturnItem = async (ret: any) => {
     const targetOrder = orders.find(o => o.id === ret.orderId);
     if (targetOrder && targetOrder.status === 'Delivered') {
       alert('ဤ Voucher သည် Delivered ဖြစ်ပြီးသားဖြစ်သဖြင့် Return ကို Cancel လုပ်၍မရပါ။ (Delivered Protection)');
@@ -655,7 +569,7 @@ export default function App() {
     }
   };
 
-  // LOGIC 5: Status Change Auto-Sync (Delivery/Partial Return -> Active Status)
+  // LOGIC 5: Status Change Auto-Sync
   const handleUpdateOrderStatus = async (orderId: string, newStatus: string, newTracking?: string) => {
     const targetOrder = orders.find(o => o.id === orderId);
     if (!targetOrder) return;
@@ -681,12 +595,13 @@ export default function App() {
         } catch (e) {}
       }
       setReturns(prev => prev.filter(r => r.orderId !== orderId));
+      setItems(prev => prev.filter(i => i.orderId !== orderId));
       addLog(`Synchronized: Removed related return records for order ${orderId} as status changed back to ${newStatus}`);
     }
 
     if (newStatus === 'Partial Return') {
       setTargetPartialOrder(targetOrder);
-      setPartialItemsForm(targetOrder.items.map(it => ({
+      setPartialItemsForm(targetOrder.items.map((it: any) => ({
         itemId: it.itemId,
         name: it.name,
         totalQty: it.qty,
@@ -713,7 +628,7 @@ export default function App() {
       addLog(`Cancelled Order ${orderId}: Restored stock quantities back to Inventory.`);
     }
 
-    const updatedItems = targetOrder.items.map(it => ({
+    const updatedItems = targetOrder.items.map((it: any) => ({
       ...it,
       status: isDelivered ? 'Delivered' : isDeliveryReturn ? 'Returned' : it.status
     }));
@@ -737,13 +652,13 @@ export default function App() {
     } catch (e) {}
 
     if (isDeliveryReturn && targetOrder.status !== 'Delivery Return') {
-      const newReturnObj: ReturnItem = {
+      const newReturnObj = {
         id: `RET-${Date.now().toString().slice(-3)}`,
         orderId: targetOrder.id,
         itemId: targetOrder.items[0]?.itemId || '',
         vendorId: targetOrder.vendorId,
-        itemName: targetOrder.items.map(i => `${i.name} (${i.qty} pcs)`).join(', '),
-        qty: targetOrder.items.reduce((sum, i) => sum + (Number(i.qty) || 1), 0),
+        itemName: targetOrder.items.map((i: any) => `${i.name} (${i.qty} pcs)`).join(', '),
+        qty: targetOrder.items.reduce((sum: number, i: any) => sum + (Number(i.qty) || 1), 0),
         type: 'Delivery Return',
         reason: 'Customer Refused / Returned from Delivery',
         status: 'In Warehouse (Voucher Stock)',
@@ -1023,7 +938,7 @@ export default function App() {
         )}
       </main>
 
-      {/* LOGIC 6: PDF PRINTABLE VOUCHER MODAL */}
+      {/* PDF PRINTABLE VOUCHER MODAL */}
       {showVoucherModal && selectedOrder && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:p-0 print:bg-white">
           <style>{`
@@ -1057,7 +972,7 @@ export default function App() {
                   <tr className="border-b text-slate-400"><th className="py-1">Item</th><th className="py-1 text-center">Qty</th><th className="py-1 text-right">Amount</th></tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {selectedOrder.items.map((it, i) => (
+                  {selectedOrder.items.map((it: any, i: number) => (
                     <tr key={i}><td className="py-1">{it.name}</td><td className="py-1 text-center">{it.qty}</td><td className="py-1 text-right">{(((Number(it.price) || 0) - (Number(it.discount) || 0)) * (Number(it.qty) || 1)).toLocaleString()} Ks</td></tr>
                   ))}
                 </tbody>
