@@ -29,17 +29,7 @@ const INITIAL_LOGS = [
 ];
 
 export default function App() {
-  const [usersList, setUsersList] = useState(() => {
-    const saved = localStorage.getItem('tn_users_list');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      } catch (e) {}
-    }
-    return INITIAL_USERS;
-  });
-
+  const [usersList, setUsersList] = useState(INITIAL_USERS);
   const [currentUser, setCurrentUser] = useState(null);
   const [loginInput, setLoginInput] = useState({ username: '', password: '' });
   const [loginError, setLoginError] = useState('');
@@ -155,59 +145,42 @@ export default function App() {
   });
 
   useEffect(() => {
-    if (usersList.length > 0) {
-      localStorage.setItem('tn_users_list', JSON.stringify(usersList));
-    }
-  }, [usersList]);
-
-  useEffect(() => {
     async function fetchData() {
       try {
         const resUsers = await fetch(`${API_BASE_URL}/api/users`);
         if (resUsers.ok) {
           const dataUsers = await resUsers.json();
-          if (Array.isArray(dataUsers) && dataUsers.length > 0) {
-            setUsersList(prev => {
-              const map = new Map();
-              dataUsers.forEach(u => map.set(u.id, u));
-              prev.forEach(u => {
-                if (!map.has(u.id)) {
-                  map.set(u.id, u);
-                }
-              });
-              return Array.from(map.values());
-            });
-          }
+          if (Array.isArray(dataUsers) && dataUsers.length > 0) setUsersList(dataUsers);
         }
 
         const resVendors = await fetch(`${API_BASE_URL}/api/vendors`);
         if (resVendors.ok) {
           const dataVendors = await resVendors.json();
-          if (Array.isArray(dataVendors) && dataVendors.length > 0) setVendors(dataVendors);
+          if (Array.isArray(dataVendors)) setVendors(dataVendors);
         }
 
         const resDeliveries = await fetch(`${API_BASE_URL}/api/deliveries`);
         if (resDeliveries.ok) {
           const dataDeliveries = await resDeliveries.json();
-          if (Array.isArray(dataDeliveries) && dataDeliveries.length > 0) setDeliveries(dataDeliveries);
+          if (Array.isArray(dataDeliveries)) setDeliveries(dataDeliveries);
         }
 
         const resItems = await fetch(`${API_BASE_URL}/api/inventory`);
         if (resItems.ok) {
           const dataItems = await resItems.json();
-          if (Array.isArray(dataItems) && dataItems.length > 0) setItems(dataItems);
+          if (Array.isArray(dataItems)) setItems(dataItems);
         }
 
         const resOrders = await fetch(`${API_BASE_URL}/api/orders`);
         if (resOrders.ok) {
           const dataOrders = await resOrders.json();
-          if (Array.isArray(dataOrders) && dataOrders.length > 0) setOrders(dataOrders);
+          if (Array.isArray(dataOrders)) setOrders(dataOrders);
         }
 
         const resReturns = await fetch(`${API_BASE_URL}/api/returns`);
         if (resReturns.ok) {
           const dataReturns = await resReturns.json();
-          if (Array.isArray(dataReturns) && dataReturns.length > 0) setReturns(dataReturns);
+          if (Array.isArray(dataReturns)) setReturns(dataReturns);
         }
 
         const resCash = await fetch(`${API_BASE_URL}/api/cash-ledger`);
@@ -578,10 +551,7 @@ export default function App() {
       try {
         const parsed = JSON.parse(event.target.result);
         if (parsed.orders && parsed.vendors) {
-          if (parsed.usersList) {
-            setUsersList(parsed.usersList);
-            localStorage.setItem('tn_users_list', JSON.stringify(parsed.usersList));
-          }
+          if (parsed.usersList) setUsersList(parsed.usersList);
           if (parsed.vendors) setVendors(parsed.vendors);
           if (parsed.deliveries) setDeliveries(parsed.deliveries);
           if (parsed.items) setItems(parsed.items);
@@ -600,36 +570,52 @@ export default function App() {
     reader.readAsText(file);
   };
 
+  // Persist User to Backend
   const handleSaveUser = async (e) => {
     e.preventDefault();
     if (!newUser.username) return;
 
-    let updatedList = [];
-    if (editingUser) {
-      const updatedUser = {
-        ...editingUser,
-        username: newUser.username,
-        password: newUser.password || editingUser.password,
-        name: newUser.name,
-        role: newUser.role,
-        vendorId: newUser.role === 'Vendor' ? newUser.vendorId : ''
-      };
-      updatedList = usersList.map(u => u.id === editingUser.id ? updatedUser : u);
-      addLog(`Updated user account: ${newUser.username}`);
-    } else {
-      const userObj = {
-        id: `USR-${Date.now().toString().slice(-3)}`,
-        username: newUser.username,
-        password: newUser.password || '123456',
-        name: newUser.name || newUser.username,
-        role: newUser.role,
-        vendorId: newUser.role === 'Vendor' ? newUser.vendorId : ''
-      };
-      updatedList = [...usersList, userObj];
-      addLog(`Created new user account: ${userObj.username}`);
+    try {
+      if (editingUser) {
+        const updatedUser = {
+          ...editingUser,
+          username: newUser.username,
+          password: newUser.password || editingUser.password,
+          name: newUser.name,
+          role: newUser.role,
+          vendorId: newUser.role === 'Vendor' ? newUser.vendorId : ''
+        };
+        await fetch(`${API_BASE_URL}/api/users/${editingUser.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatedUser)
+        }).catch(() => fetch(`${API_BASE_URL}/api/users`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatedUser)
+        }));
+        setUsersList(usersList.map(u => u.id === editingUser.id ? updatedUser : u));
+        addLog(`Updated user account: ${newUser.username}`);
+      } else {
+        const userObj = {
+          id: `USR-${Date.now().toString().slice(-3)}`,
+          username: newUser.username,
+          password: newUser.password || '123456',
+          name: newUser.name || newUser.username,
+          role: newUser.role,
+          vendorId: newUser.role === 'Vendor' ? newUser.vendorId : ''
+        };
+        await fetch(`${API_BASE_URL}/api/users`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(userObj)
+        });
+        setUsersList([...usersList, userObj]);
+        addLog(`Created new user account: ${userObj.username}`);
+      }
+    } catch (err) {
+      console.error('User save error:', err);
     }
-    setUsersList(updatedList);
-    localStorage.setItem('tn_users_list', JSON.stringify(updatedList));
     setShowUserModal(false);
     setEditingUser(null);
     setNewUser({ username: '', password: '', name: '', role: 'Staff', vendorId: '' });
@@ -637,39 +623,60 @@ export default function App() {
 
   const handleDeleteUser = async (userId) => {
     if (confirm('ဤ User အကောင့်ကို ဖျက်ရန် သေချာပါသလား?')) {
-      const updatedList = usersList.filter(u => u.id !== userId);
-      setUsersList(updatedList);
-      localStorage.setItem('tn_users_list', JSON.stringify(updatedList));
+      try {
+        await fetch(`${API_BASE_URL}/api/users/${userId}`, { method: 'DELETE' });
+      } catch (e) {}
+      setUsersList(usersList.filter(u => u.id !== userId));
       addLog(`Deleted user ID ${userId}`);
     }
   };
 
+  // Persist Vendor to Backend
   const handleSaveVendor = async (e) => {
     e.preventDefault();
     if (!newVendor.name || !newVendor.phone) return;
 
-    if (editingVendor) {
-      setVendors(vendors.map(v => v.id === editingVendor.id ? { ...v, ...newVendor } : v));
-      addLog(`Updated vendor: ${newVendor.name}`);
-      setEditingVendor(null);
-    } else {
-      const vendorObj = {
-        id: `VND-${Math.floor(100 + Math.random() * 900)}`,
-        name: newVendor.name,
-        phone: newVendor.phone,
-        address: newVendor.address,
-        bankAccount: newVendor.bankAccount,
-        freeStorageDays: 7,
-        dailyStoreFee: 200
-      };
-      setVendors([...vendors, vendorObj]);
-      addLog(`Registered new vendor: ${vendorObj.name}`);
+    try {
+      if (editingVendor) {
+        const updated = { ...editingVendor, ...newVendor };
+        await fetch(`${API_BASE_URL}/api/vendors/${editingVendor.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updated)
+        }).catch(() => fetch(`${API_BASE_URL}/api/vendors`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updated)
+        }));
+        setVendors(vendors.map(v => v.id === editingVendor.id ? updated : v));
+        addLog(`Updated vendor: ${newVendor.name}`);
+        setEditingVendor(null);
+      } else {
+        const vendorObj = {
+          id: `VND-${Math.floor(100 + Math.random() * 900)}`,
+          name: newVendor.name,
+          phone: newVendor.phone,
+          address: newVendor.address,
+          bankAccount: newVendor.bankAccount,
+          freeStorageDays: 7,
+          dailyStoreFee: 200
+        };
+        await fetch(`${API_BASE_URL}/api/vendors`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(vendorObj)
+        });
+        setVendors([...vendors, vendorObj]);
+        addLog(`Registered new vendor: ${vendorObj.name}`);
+      }
+    } catch (err) {
+      console.error('Vendor save error:', err);
     }
     setShowVendorModal(false);
     setNewVendor({ name: '', phone: '', address: '', bankAccount: '' });
   };
 
-  const handleDeleteVendor = (vendorId) => {
+  const handleDeleteVendor = async (vendorId) => {
     const hasItems = items.some(i => i.vendorId === vendorId && Number(i.quantity) > 0);
     const hasOrders = orders.some(o => o.vendorId === vendorId);
     if (hasItems || hasOrders) {
@@ -677,37 +684,58 @@ export default function App() {
       return;
     }
     if (confirm('ဤ Vendor ကို အပြီးတိုင် ဖျက်ရန် သေချာပါသလား?')) {
+      try {
+        await fetch(`${API_BASE_URL}/api/vendors/${vendorId}`, { method: 'DELETE' });
+      } catch (e) {}
       setVendors(vendors.filter(v => v.id !== vendorId));
       addLog(`Deleted vendor ID ${vendorId}`);
     }
   };
 
+  // Persist Delivery to Backend
   const handleSaveDelivery = async (e) => {
     e.preventDefault();
     if (!newDelivery.name || !newDelivery.phone) return;
 
-    if (editingDelivery) {
-      const updatedObj = { ...editingDelivery, ...newDelivery };
-      setDeliveries(deliveries.map(d => d.id === editingDelivery.id ? updatedObj : d));
-      // Update existing order records with updated delivery service name
-      setOrders(prev => prev.map(o => {
-        if (o.deliveryServiceId === editingDelivery.id || o.deliveryService === editingDelivery.name) {
-          return { ...o, deliveryService: newDelivery.name, deliveryServiceId: editingDelivery.id };
-        }
-        return o;
-      }));
-      addLog(`Updated delivery service: ${newDelivery.name}`);
-      setEditingDelivery(null);
-    } else {
-      const deliveryObj = {
-        id: `DEL-${Math.floor(100 + Math.random() * 900)}`,
-        name: newDelivery.name,
-        phone: newDelivery.phone,
-        address: newDelivery.address,
-        bankAccount: newDelivery.bankAccount
-      };
-      setDeliveries([...deliveries, deliveryObj]);
-      addLog(`Registered new delivery service: ${deliveryObj.name}`);
+    try {
+      if (editingDelivery) {
+        const updatedObj = { ...editingDelivery, ...newDelivery };
+        await fetch(`${API_BASE_URL}/api/deliveries/${editingDelivery.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatedObj)
+        }).catch(() => fetch(`${API_BASE_URL}/api/deliveries`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatedObj)
+        }));
+        setDeliveries(deliveries.map(d => d.id === editingDelivery.id ? updatedObj : d));
+        setOrders(prev => prev.map(o => {
+          if (o.deliveryServiceId === editingDelivery.id || o.deliveryService === editingDelivery.name) {
+            return { ...o, deliveryService: newDelivery.name, deliveryServiceId: editingDelivery.id };
+          }
+          return o;
+        }));
+        addLog(`Updated delivery service: ${newDelivery.name}`);
+        setEditingDelivery(null);
+      } else {
+        const deliveryObj = {
+          id: `DEL-${Math.floor(100 + Math.random() * 900)}`,
+          name: newDelivery.name,
+          phone: newDelivery.phone,
+          address: newDelivery.address,
+          bankAccount: newDelivery.bankAccount
+        };
+        await fetch(`${API_BASE_URL}/api/deliveries`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(deliveryObj)
+        });
+        setDeliveries([...deliveries, deliveryObj]);
+        addLog(`Registered new delivery service: ${deliveryObj.name}`);
+      }
+    } catch (err) {
+      console.error('Delivery save error:', err);
     }
     setShowDeliveryModal(false);
     setNewDelivery({ id: '', name: '', phone: '', address: '', bankAccount: '' });
@@ -720,20 +748,29 @@ export default function App() {
       return;
     }
     if (confirm(`Delivery "${delName}" ကို ဖျက်ရန် သေချာပါသလား?`)) {
+      try {
+        await fetch(`${API_BASE_URL}/api/deliveries/${delId}`, { method: 'DELETE' });
+      } catch (e) {}
       setDeliveries(deliveries.filter(d => d.id !== delId));
       addLog(`Deleted delivery service ID ${delId}`);
     }
   };
 
-  const handleCancelInventoryItem = (item) => {
+  const handleCancelInventoryItem = async (item) => {
     if (confirm(`သတိပေးချက်: Stock item "${item.name}" ကို Cancel လုပ်၍ စာရင်းမှ ဖျက်ပစ်ပြီး သက်ဆိုင်ရာ လက်ကျန်ဒေတာများကို Update လုပ်မည် သေချာပါသလား?`)) {
+      try {
+        await fetch(`${API_BASE_URL}/api/inventory/${item.id}`, { method: 'DELETE' });
+      } catch (e) {}
       setItems(items.filter(i => i.id !== item.id));
       addLog(`Cancelled and removed inventory item ${item.name} (SKU: ${item.sku}) and updated related stock data`);
     }
   };
 
-  const handleCancelReturnItem = (ret) => {
+  const handleCancelReturnItem = async (ret) => {
     if (confirm(`Return record ${ret.id} ကို Cancel လုပ်မည် သေချာပါသလား? (ပစ္စည်းအရေအတွက် Stock သို့ ပြန်လည် Restore ဖြစ်မည်။)`)) {
+      try {
+        await fetch(`${API_BASE_URL}/api/returns/${ret.id}`, { method: 'DELETE' });
+      } catch (e) {}
       if (ret.itemId) {
         setItems(prev => prev.map(i => {
           if (i.id === ret.itemId) {
@@ -747,6 +784,7 @@ export default function App() {
     }
   };
 
+  // Persist Order to Backend
   const handleCreateOrder = async (e) => {
     e.preventDefault();
     if (!newOrder.vendorId || newOrder.items.length === 0) return;
@@ -793,6 +831,16 @@ export default function App() {
       createdAt: new Date().toLocaleString(),
       updatedBy: currentUser?.name || 'Staff'
     };
+
+    try {
+      await fetch(`${API_BASE_URL}/api/orders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(createdOrder)
+      });
+    } catch (err) {
+      console.error('Order save error:', err);
+    }
 
     setOrders([createdOrder, ...orders]);
     for (const ordered of newOrder.items) {
@@ -863,6 +911,7 @@ export default function App() {
     }));
 
     const updatedFields = {
+      ...targetOrder,
       status: newStatus,
       trackingNo: newTracking || targetOrder.trackingNo,
       cancelled: isCancelled || isDeliveryReturn,
@@ -870,6 +919,18 @@ export default function App() {
       items: updatedItems,
       updatedBy: currentUser?.name || 'Staff'
     };
+
+    try {
+      await fetch(`${API_BASE_URL}/api/orders/${orderId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedFields)
+      }).catch(() => fetch(`${API_BASE_URL}/api/orders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedFields)
+      }));
+    } catch (e) {}
 
     if (isDeliveryReturn && targetOrder.status !== 'Delivery Return') {
       for (const ordItem of targetOrder.items) {
@@ -907,6 +968,13 @@ export default function App() {
         status: 'In Warehouse',
         date: new Date().toLocaleDateString()
       };
+      try {
+        await fetch(`${API_BASE_URL}/api/returns`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newReturnObj)
+        });
+      } catch (e) {}
       setReturns(prev => [newReturnObj, ...prev]);
       addNotification('Delivery Return', `Order ${targetOrder.id} returned from delivery.`, 'return');
     }
@@ -977,6 +1045,13 @@ export default function App() {
           status: 'In Warehouse',
           date: new Date().toLocaleDateString()
         };
+        try {
+          await fetch(`${API_BASE_URL}/api/returns`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(retObj)
+          });
+        } catch (e) {}
         setReturns(prev => [retObj, ...prev]);
       }
     }
@@ -984,6 +1059,7 @@ export default function App() {
     const newTotalCod = newItemTotal + (Number(targetPartialOrder.deliveryFee) || 0);
 
     const updatedFields = {
+      ...targetPartialOrder,
       status: 'Partial Return',
       items: updatedOrderItems.length > 0 ? updatedOrderItems : targetPartialOrder.items,
       itemTotal: newItemTotal,
@@ -991,6 +1067,14 @@ export default function App() {
       codCollected: true,
       updatedBy: currentUser?.name || 'Staff'
     };
+
+    try {
+      await fetch(`${API_BASE_URL}/api/orders/${targetPartialOrder.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedFields)
+      });
+    } catch (e) {}
 
     setOrders(prev => prev.map(o => o.id === targetPartialOrder.id ? { ...o, ...updatedFields } : o));
     addLog(`Processed Partial Return for Order ${targetPartialOrder.id}`);
@@ -1014,6 +1098,9 @@ export default function App() {
     }
 
     if (confirm(`သတိပေးချက်: Cancelled Voucher ${orderId} ကို စနစ်ထဲမှ အပြီးတိုင် ဖျက်ပစ်ရန် သေချာပါသလား?`)) {
+      try {
+        await fetch(`${API_BASE_URL}/api/orders/${orderId}`, { method: 'DELETE' });
+      } catch (e) {}
       setOrders(prev => prev.filter(o => o.id !== orderId));
       setSelectedOrderIds(prev => prev.filter(id => id !== orderId));
       addLog(`Admin deleted Voucher ${orderId}`);
@@ -2307,7 +2394,7 @@ export default function App() {
               <button onClick={() => setShowEditItemModal(false)} className="text-slate-400 hover:text-slate-600 text-lg">✕</button>
             </div>
 
-            <form onSubmit={(e) => {
+            <form onSubmit={async (e) => {
               e.preventDefault();
               const updatedItem = {
                 ...editingInventoryItem,
@@ -2319,6 +2406,17 @@ export default function App() {
                 storeChargePerDay: Number(editInventoryForm.storeChargePerDay) || 30,
                 freeDays: Number(editInventoryForm.freeDays) || 7
               };
+              try {
+                await fetch(`${API_BASE_URL}/api/inventory/${editingInventoryItem.id}`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(updatedItem)
+                }).catch(() => fetch(`${API_BASE_URL}/api/inventory`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(updatedItem)
+                }));
+              } catch (err) {}
               setItems(items.map(i => i.id === editingInventoryItem.id ? updatedItem : i));
               addLog(`Updated inventory item details for ${updatedItem.name} (SKU: ${updatedItem.sku})`);
               setShowEditItemModal(false);
@@ -2398,7 +2496,7 @@ export default function App() {
               <button onClick={() => setShowEditReturnModal(false)} className="text-slate-400 hover:text-slate-600 text-lg">✕</button>
             </div>
 
-            <form onSubmit={(e) => {
+            <form onSubmit={async (e) => {
               e.preventDefault();
               const oldQty = Number(editingReturnItem.qty) || 0;
               const newQty = Number(editReturnForm.qty) || 0;
@@ -2419,6 +2517,18 @@ export default function App() {
                 qty: newQty,
                 reason: editReturnForm.reason
               };
+
+              try {
+                await fetch(`${API_BASE_URL}/api/returns/${editingReturnItem.id}`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(updatedRet)
+                }).catch(() => fetch(`${API_BASE_URL}/api/returns`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(updatedRet)
+                }));
+              } catch (err) {}
 
               setReturns(returns.map(r => r.id === editingReturnItem.id ? updatedRet : r));
               addLog(`Updated return record ${updatedRet.id}: Item Name -> ${updatedRet.itemName}, Qty -> ${updatedRet.qty}`);
@@ -2579,7 +2689,7 @@ export default function App() {
                 <button type="button" onClick={() => setShowCashModal(false)} className="w-1/2 bg-slate-100 py-2.5 rounded-lg font-semibold">Cancel</button>
                 <button 
                   type="button" 
-                  onClick={() => {
+                  onClick={async () => {
                     if (!selectedPartnerId || selectedVoucherIds.length === 0) {
                       alert('ကျေးဇူးပြု၍ Partner နှင့် Voucher များကို အနည်းဆုံး တစ်ခု ရွေးချယ်ပါ။');
                       return;
@@ -2612,6 +2722,14 @@ export default function App() {
                       date: new Date().toLocaleDateString(),
                       createdBy: currentUser?.name || 'Staff'
                     };
+
+                    try {
+                      await fetch(`${API_BASE_URL}/api/cash-ledger`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(cObj)
+                      });
+                    } catch (e) {}
 
                     setCashLedger([cObj, ...cashLedger]);
                     setShowCashModal(false);
@@ -2695,7 +2813,7 @@ export default function App() {
               <div className="pt-3 flex space-x-2">
                 <button onClick={() => setShowReturnModal(false)} className="w-1/2 bg-slate-100 py-2.5 rounded-lg font-semibold">Cancel</button>
                 <button 
-                  onClick={() => {
+                  onClick={async () => {
                     const numQty = Number(returnForm.qty);
                     if (numQty <= 0 || numQty > targetReturnItem.quantity) {
                       alert('အရေအတွက် မှားယွင်းနေပါသည်။');
@@ -2713,6 +2831,14 @@ export default function App() {
                       status: 'Returned to Vendor',
                       date: new Date().toLocaleDateString()
                     };
+
+                    try {
+                      await fetch(`${API_BASE_URL}/api/returns`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(newReturnObj)
+                      });
+                    } catch (e) {}
 
                     const newQty = Math.max(0, (Number(targetReturnItem.quantity) || 0) - numQty);
                     setItems(prev => prev.map(i => i.id === targetReturnItem.id ? { ...i, quantity: newQty } : i));
@@ -2815,7 +2941,7 @@ export default function App() {
               <button type="button" onClick={() => setIsExistingItemMode(false)} className={`flex-1 py-1.5 rounded-md transition-all ${!isExistingItemMode ? 'bg-white shadow text-indigo-600' : 'text-slate-600'}`}>Brand New Item</button>
             </div>
 
-            <form onSubmit={(e) => {
+            <form onSubmit={async (e) => {
               e.preventDefault();
               const todayStr = new Date().toISOString().split('T')[0];
 
@@ -2841,6 +2967,13 @@ export default function App() {
                   storeChargePerDay: Number(newItem.storeChargePerDay) || targetExisting.storeChargePerDay || 30,
                   freeDays: Number(newItem.freeDays) || targetExisting.freeDays || 7
                 };
+                try {
+                  await fetch(`${API_BASE_URL}/api/inventory`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(newBatchItem)
+                  });
+                } catch (err) {}
                 setItems([newBatchItem, ...items]);
                 addLog(`Added restock batch of ${addQty} pcs for ${targetExisting.name}`);
                 setShowItemModal(false);
@@ -2867,6 +3000,13 @@ export default function App() {
                   storeChargePerDay: Number(newItem.storeChargePerDay) || 30,
                   freeDays: Number(newItem.freeDays) || 7
                 };
+                try {
+                  await fetch(`${API_BASE_URL}/api/inventory`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(itemObj)
+                  });
+                } catch (err) {}
                 setItems([itemObj, ...items]);
                 addLog(`Added new stock item ${itemObj.name} with date ${todayStr}`);
                 setShowItemModal(false);
@@ -3112,7 +3252,7 @@ export default function App() {
 
             <div className="space-y-1 text-right">
               <div className="flex justify-between text-slate-500"><span>Items Subtotal:</span><span>{(Number(selectedOrder.itemTotal) || 0).toLocaleString()} Ks</span></div>
-              <div className="flex justify-between text-slate-500"><span>Delivery Fee:</span><span>{(Number(selectedOrder.deliveryFee) || 0).toLocaleString()} Ks</span></div>
+              <div className="flex justify-between text-slate-500"><span>Delivery Fee:</span><span>{(Number(selectedOrder.deliveryFee) || 0).toLocaleString()} Ks</span>},
               <div className="flex justify-between font-extrabold text-sm text-slate-900 border-t pt-1"><span>Total COD to Pay:</span><span className="text-indigo-600">{(Number(selectedOrder.totalCod) || 0).toLocaleString()} Ks</span></div>
             </div>
 
