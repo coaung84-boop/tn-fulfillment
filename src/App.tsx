@@ -243,7 +243,6 @@ export default function App() {
     }
   };
 
-  // Dynamic Delivery Name Lookup to support edits instantly across tables & vouchers
   const getDeliveryName = (order) => {
     if (order.deliveryServiceId) {
       const found = deliveries.find(d => d.id === order.deliveryServiceId);
@@ -292,7 +291,6 @@ export default function App() {
     return ids;
   }, [cashLedger]);
 
-  // Scoped Items with Unified Search
   const scopedItems = useMemo(() => {
     let res = items;
     if (currentUser && currentUser.role === 'Vendor') {
@@ -311,7 +309,6 @@ export default function App() {
     return res;
   }, [items, currentUser, invSearchMode, invSearchVal, vendors]);
 
-  // Scoped Orders with Unified Search
   const scopedOrders = useMemo(() => {
     let res = orders;
     if (currentUser && currentUser.role === 'Vendor') {
@@ -335,7 +332,6 @@ export default function App() {
     return res;
   }, [orders, currentUser, deliveryFilter, orderSearchMode, orderSearchVal, vendors, deliveries]);
 
-  // Scoped Returns with Unified Search
   const scopedReturns = useMemo(() => {
     let res = returns;
     if (currentUser && currentUser.role === 'Vendor') {
@@ -356,7 +352,6 @@ export default function App() {
     return res;
   }, [returns, currentUser, retSearchMode, retSearchVal, vendors]);
 
-  // Scoped Cash Ledger with Unified Search
   const scopedCashLedger = useMemo(() => {
     let res = cashLedger;
     if (cashSearchVal.trim()) {
@@ -570,7 +565,6 @@ export default function App() {
     reader.readAsText(file);
   };
 
-  // Persist User to Backend
   const handleSaveUser = async (e) => {
     e.preventDefault();
     if (!newUser.username) return;
@@ -631,7 +625,6 @@ export default function App() {
     }
   };
 
-  // Persist Vendor to Backend
   const handleSaveVendor = async (e) => {
     e.preventDefault();
     if (!newVendor.name || !newVendor.phone) return;
@@ -692,7 +685,6 @@ export default function App() {
     }
   };
 
-  // Persist Delivery to Backend
   const handleSaveDelivery = async (e) => {
     e.preventDefault();
     if (!newDelivery.name || !newDelivery.phone) return;
@@ -767,6 +759,15 @@ export default function App() {
   };
 
   const handleCancelReturnItem = async (ret) => {
+    // 2. Delivered Protection: သက်ဆိုင်ရာ Voucher သည် Delivered ဖြစ်သွားပြီးသားဆိုပါက Return ကို Cancel လုပ်ခွင့်မရှိစေရန် တားဆီးခြင်း
+    if (ret.orderId) {
+      const associatedOrder = orders.find(o => o.id === ret.orderId);
+      if (associatedOrder && associatedOrder.status === 'Delivered') {
+        alert('ဤ Return စာရင်းနှင့် ဆက်စပ်နေသော Voucher မှာ Delivered ပြီးစီးသွားပြီဖြစ်သဖြင့် Cancel လုပ်၍မရပါ။');
+        return;
+      }
+    }
+
     if (confirm(`Return record ${ret.id} ကို Cancel လုပ်မည် သေချာပါသလား? (ပစ္စည်းအရေအတွက် Stock သို့ ပြန်လည် Restore ဖြစ်မည်။)`)) {
       try {
         await fetch(`${API_BASE_URL}/api/returns/${ret.id}`, { method: 'DELETE' });
@@ -784,7 +785,6 @@ export default function App() {
     }
   };
 
-  // Persist Order to Backend
   const handleCreateOrder = async (e) => {
     e.preventDefault();
     if (!newOrder.vendorId || newOrder.items.length === 0) return;
@@ -890,20 +890,75 @@ export default function App() {
       return;
     }
 
-    const prevStatus = targetOrder.status;
     const isDelivered = newStatus === 'Delivered';
     const isCancelled = newStatus === 'Cancelled';
     const isDeliveryReturn = newStatus === 'Delivery Return';
 
-    // 1. If previously Delivery Return and now changing away from Delivery Return -> Rollback return stock & return record
-    if (prevStatus === 'Delivery Return' && !isDeliveryReturn) {
-      setItems(prev => prev.filter(i => i.orderId !== orderId));
+    // 6. Status ပြန်ပြောင်းသည့်အခါ Stock & Return Records များကို ချိန်ညှိခြင်း (Clean-up if moving away from Return/Partial Return)
+    const oldStatus = targetOrder.status;
+    if ((oldStatus === 'Delivery Return' || oldStatus === 'Partial Return') && (newStatus === 'Pending' || newStatus === 'In-Transit' || newStatus === 'Delivered')) {
+      // Remove associated return records from returns list
       setReturns(prev => prev.filter(r => r.orderId !== orderId));
-      addLog(`Reverted Delivery Return for Order ${orderId}: Cleaned up auto-generated return stock and return record.`);
+      try {
+        // Find and delete from backend returns if any
+        const matchingReturns = returns.filter(r => r.orderId === orderId);
+        for (const retItem of matchingReturns) {
+          await fetch(`${API_BASE_URL}/api/returns/${retItem.id}`, { method: 'DELETE' }).catch(() => {});
+        }
+      } catch (e) {}
+
+      // Remove returned items from inventory that were added due to return state
+      for (const ordItem of targetOrder.items) {
+        setItems(prev => prev.map(i => {
+          if (i.vendorId === targetOrder.vendorId && (i.name.includes('Returned') || i.name.includes('Partial Ret')) && i.sku && i.sku.includes(orderId)) {
+            return { ...i, quantity: 0 };
+          }
+          return i;
+        }));
+      }
+      addLog(`Cleaned up return records and inventory for Order ${orderId} as status changed from ${oldStatus} to ${newStatus}`);
     }
 
-    // 2. If changing to Delivery Return (and wasn't before) -> Generate return stock batch & return record
-    if (isDeliveryReturn && prevStatus !== 'Delivery Return') {
+    // 1. Delivery Return Cancel Logic / Cancelled stock restore
+    if (isCancelled && !targetOrder.cancelled) {
+      for (const ordItem of targetOrder.items) {
+        const stockItem = items.find(i => i.id === ordItem.itemId);
+        if (stockItem) {
+          setItems(prev => prev.map(i => i.id === stockItem.id ? { ...i, quantity: (Number(i.quantity) || 0) + (Number(ordItem.qty) || 0) } : i));
+        }
+      }
+      addLog(`Cancelled Order ${orderId}: Restored stock quantities back to Inventory.`);
+    }
+
+    const updatedItems = targetOrder.items.map(it => ({
+      ...it,
+      status: isDelivered ? 'Delivered' : isDeliveryReturn ? 'Returned' : it.status
+    }));
+
+    const updatedFields = {
+      ...targetOrder,
+      status: newStatus,
+      trackingNo: newTracking || targetOrder.trackingNo,
+      cancelled: isCancelled,
+      codCollected: isDelivered ? true : false,
+      items: updatedItems,
+      updatedBy: currentUser?.name || 'Staff'
+    };
+
+    try {
+      await fetch(`${API_BASE_URL}/api/orders/${orderId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedFields)
+      }).catch(() => fetch(`${API_BASE_URL}/api/orders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedFields)
+      }));
+    } catch (e) {}
+
+    // When Delivery Return happens: 1. Do NOT add directly to General Inventory as normal stock without tracking, but create a Return record & specific batch
+    if (isDeliveryReturn && targetOrder.status !== 'Delivery Return') {
       for (const ordItem of targetOrder.items) {
         const stockItem = items.find(i => i.id === ordItem.itemId);
         if (stockItem) {
@@ -918,11 +973,10 @@ export default function App() {
             quantity: ordItem.qty,
             damagedQty: 0,
             stockInDate: todayStr,
-            sku: `${stockItem.sku}-RET`,
+            sku: `${stockItem.sku}-RET-${orderId}`,
             handlingFee: stockItem.handlingFee,
             storeChargePerDay: stockItem.storeChargePerDay,
-            freeDays: stockItem.freeDays,
-            orderId: targetOrder.id
+            freeDays: stockItem.freeDays
           };
           setItems(prev => [newBatchItem, ...prev]);
         }
@@ -950,44 +1004,6 @@ export default function App() {
       setReturns(prev => [newReturnObj, ...prev]);
       addNotification('Delivery Return', `Order ${targetOrder.id} returned from delivery.`, 'return');
     }
-
-    // Restore stock to inventory if order is newly CANCELLED
-    if (isCancelled && !targetOrder.cancelled) {
-      for (const ordItem of targetOrder.items) {
-        const stockItem = items.find(i => i.id === ordItem.itemId);
-        if (stockItem) {
-          setItems(prev => prev.map(i => i.id === stockItem.id ? { ...i, quantity: (Number(i.quantity) || 0) + (Number(ordItem.qty) || 0) } : i));
-        }
-      }
-      addLog(`Cancelled Order ${orderId}: Restored stock quantities back to Inventory.`);
-    }
-
-    const updatedItems = targetOrder.items.map(it => ({
-      ...it,
-      status: isDelivered ? 'Delivered' : isDeliveryReturn ? 'Returned' : it.status
-    }));
-
-    const updatedFields = {
-      ...targetOrder,
-      status: newStatus,
-      trackingNo: newTracking || targetOrder.trackingNo,
-      cancelled: isCancelled || isDeliveryReturn,
-      codCollected: isDelivered ? true : false,
-      items: updatedItems,
-      updatedBy: currentUser?.name || 'Staff'
-    };
-
-    try {
-      await fetch(`${API_BASE_URL}/api/orders/${orderId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedFields)
-      }).catch(() => fetch(`${API_BASE_URL}/api/orders`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedFields)
-      }));
-    } catch (e) {}
 
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, ...updatedFields } : o));
     addNotification('Order Updated', `Order ${orderId} status changed to ${newStatus}`, 'order');
@@ -1035,11 +1051,10 @@ export default function App() {
             quantity: returnedQ,
             damagedQty: 0,
             stockInDate: todayStr,
-            sku: `${stockItem.sku}-PRET`,
+            sku: `${stockItem.sku}-PRET-${targetPartialOrder.id}`,
             handlingFee: stockItem.handlingFee,
             storeChargePerDay: stockItem.storeChargePerDay,
-            freeDays: stockItem.freeDays,
-            orderId: targetPartialOrder.id
+            freeDays: stockItem.freeDays
           };
           setItems(prev => [newBatchItem, ...prev]);
         }
@@ -1103,25 +1118,25 @@ export default function App() {
       return;
     }
     const targetOrder = orders.find(o => o.id === orderId);
-    if (!targetOrder) return;
-
-    if (targetOrder.status === 'Partial Return') {
-      alert('Partial Return ဖြစ်နေသော Voucher များကို ဖျက်၍မရပါ။ (Active Delivered items များ ရှိနေပါသည်)');
+    if (!targetOrder?.cancelled) {
+      alert('ခွင့်ပြုချက်မရှိပါ: Cancelled ဖြစ်နေသော Voucher များကိုသာ ဖျက်ခွင့်ရှိပါသည်။');
       return;
     }
 
-    if (!targetOrder.cancelled && targetOrder.status !== 'Cancelled' && targetOrder.status !== 'Delivery Return') {
-      alert('ခွင့်ပြုချက်မရှိပါ: Cancelled သို့မဟုတ် Delivery Return ဖြစ်နေသော Voucher များကိုသာ ဖျက်ခွင့်ရှိပါသည်။');
-      return;
-    }
-
-    if (confirm(`သတိပေးချက်: Voucher ${orderId} ကို စနစ်ထဲမှ အပြီးတိုင် ဖျက်ပစ်ရန် သေချာပါသလား?`)) {
+    // 3. Delete Voucher & Order ID Restore: Cancelled သို့မဟုတ် Return ဖြစ်နေသော Voucher များကို Delete လုပ်ပါက Order ID ဖြင့် Stock Qty များ သက်ဆိုင်ရာနေရာသို့ ပြန်လည်ရောက်ရှိစေခြင်း
+    if (confirm(`သတိပေးချက်: Cancelled Voucher ${orderId} ကို စနစ်ထဲမှ အပြီးတိုင် ဖျက်ပစ်ပြီး Stock Qty များကို သက်ဆိုင်ရာနေရာသို့ ပြန်လည် Restore လုပ်မည် သေချာပါသလား?`)) {
+      for (const ordItem of targetOrder.items) {
+        const stockItem = items.find(i => i.id === ordItem.itemId);
+        if (stockItem) {
+          setItems(prev => prev.map(i => i.id === stockItem.id ? { ...i, quantity: (Number(i.quantity) || 0) + (Number(ordItem.qty) || 0) } : i));
+        }
+      }
       try {
         await fetch(`${API_BASE_URL}/api/orders/${orderId}`, { method: 'DELETE' });
       } catch (e) {}
       setOrders(prev => prev.filter(o => o.id !== orderId));
       setSelectedOrderIds(prev => prev.filter(id => id !== orderId));
-      addLog(`Admin deleted Voucher ${orderId}`);
+      addLog(`Admin deleted Voucher ${orderId} and restored item stock quantities.`);
     }
   };
 
@@ -1417,7 +1432,6 @@ export default function App() {
 
             {currentUser.role !== 'Vendor' && (
               <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
-                
                 <div className="flex flex-wrap justify-between items-center gap-3 border-b pb-3">
                   <div className="flex items-center space-x-2">
                     <div className="flex items-center bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-1.5 text-xs font-bold text-indigo-700">
@@ -1551,7 +1565,6 @@ export default function App() {
         {activeTab === 'orders' && (
           <div className="space-y-4">
             
-            {/* Unified Search By Widget for Orders */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
               <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                 <div className="relative">
@@ -1708,7 +1721,7 @@ export default function App() {
                             <button onClick={() => { setSelectedOrder(order); setShowVoucherModal(true); }} className="bg-slate-100 hover:bg-slate-200 text-slate-700 p-1.5 rounded text-[11px] font-semibold inline-flex items-center space-x-1">
                               <Printer className="w-3.5 h-3.5" /><span>Voucher</span>
                             </button>
-                            {currentUser.role === 'Admin' && (order.cancelled || order.status === 'Delivery Return') && order.status !== 'Partial Return' && !isCodDone && (
+                            {currentUser.role === 'Admin' && order.cancelled && !isCodDone && (
                               <button onClick={() => handleDeleteVoucher(order.id)} className="bg-rose-50 hover:bg-rose-100 text-rose-700 p-1.5 rounded text-[11px] font-semibold inline-flex items-center space-x-1">
                                 <Trash2 className="w-3.5 h-3.5" /><span>Delete</span>
                               </button>
@@ -1728,7 +1741,6 @@ export default function App() {
         {activeTab === 'inventory' && (
           <div className="space-y-4">
             
-            {/* Unified Search By Widget for Inventory */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
               <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                 <div className="relative">
@@ -1913,7 +1925,6 @@ export default function App() {
         {activeTab === 'returns' && (
           <div className="space-y-4">
             
-            {/* Unified Search By Widget for Returns */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
               <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                 <div className="relative">
@@ -2212,7 +2223,6 @@ export default function App() {
         {activeTab === 'cash_ledger' && currentUser.role !== 'Vendor' && (
           <div className="space-y-4">
             
-            {/* Unified Search By Widget for Cash Management */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
               <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                 <div className="relative">
@@ -3232,10 +3242,10 @@ export default function App() {
         </div>
       )}
 
-   {showVoucherModal && selectedOrder && (
+      {/* 4. PDF Direct Print/Save Voucher Modal */}
+      {showVoucherModal && selectedOrder && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:p-0 print:bg-white">
           
-          {/* Print Styling CSS to hide everything except voucher */}
           <style>{`
             @media print {
               body * {
