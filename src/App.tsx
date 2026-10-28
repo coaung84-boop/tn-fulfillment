@@ -3214,9 +3214,9 @@ export default function App() {
         </div>
       )}
 
-      {showVoucherModal && selectedOrder && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl max-w-sm w-full p-6 shadow-2xl space-y-4 text-xs font-mono text-slate-800 border border-slate-200">
+    {showVoucherModal && selectedOrder && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:bg-white print:p-0 print:inset-auto print:static">
+          <div className="bg-white rounded-xl max-w-sm w-full p-6 shadow-2xl space-y-4 text-xs font-mono text-slate-800 border border-slate-200 print:shadow-none print:border-none print:w-full print:max-w-none print:m-0">
             
             <div className="text-center border-b pb-3">
               <h2 className="text-lg font-black tracking-wider text-slate-900">DELIVERY VOUCHER</h2>
@@ -3252,7 +3252,7 @@ export default function App() {
 
             <div className="space-y-1 text-right">
               <div className="flex justify-between text-slate-500"><span>Items Subtotal:</span><span>{(Number(selectedOrder.itemTotal) || 0).toLocaleString()} Ks</span></div>
-             <div className="flex justify-between text-slate-500"><span>Delivery Fee:</span><span>{(Number(selectedOrder.deliveryFee) || 0).toLocaleString()} Ks</span></div>
+              <div className="flex justify-between text-slate-500"><span>Delivery Fee:</span><span>{(Number(selectedOrder.deliveryFee) || 0).toLocaleString()} Ks</span></div>
               <div className="flex justify-between font-extrabold text-sm text-slate-900 border-t pt-1"><span>Total COD to Pay:</span><span className="text-indigo-600">{(Number(selectedOrder.totalCod) || 0).toLocaleString()} Ks</span></div>
             </div>
 
@@ -3260,7 +3260,8 @@ export default function App() {
               <p className="text-[9px] text-slate-400 tracking-wider uppercase font-semibold">Supported by T&N Fulfillment Services</p>
             </div>
 
-            <div className="pt-2 flex space-x-2">
+            {/* Print ထုတ်သည့်အခါ ခလုတ်များ မပါလာစေရန် print:hidden ထည့်သွင်းထားပါသည် */}
+            <div className="pt-2 flex space-x-2 print:hidden">
               <button onClick={() => setShowVoucherModal(false)} className="w-1/2 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 rounded font-sans font-semibold text-xs">Close</button>
               <button onClick={() => { window.print(); addLog(`Printed voucher for ${selectedOrder.id}`); }} className="w-1/2 bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded font-sans font-semibold text-xs flex items-center justify-center space-x-1">
                 <Printer className="w-3.5 h-3.5" /><span>Print Voucher</span>
