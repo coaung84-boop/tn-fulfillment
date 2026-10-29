@@ -955,16 +955,12 @@ export default function App() {
       return;
     }
 
-    const wasCancelled = targetOrder.cancelled && targetOrder.status === 'Cancelled';
-    const wasDeliveryReturn = targetOrder.status === 'Delivery Return';
-    const isNowActive = newStatus === 'Pending' || newStatus === 'In-Transit' || newStatus === 'Delivered';
+    const wasCancelled = targetOrder.cancelled || targetOrder.status === 'Cancelled';
+    const isNowCancelled = newStatus === 'Cancelled';
 
-    const isDelivered = newStatus === 'Delivered';
-    const isCancelled = newStatus === 'Cancelled';
-    const isDeliveryReturn = newStatus === 'Delivery Return';
-
-    // 💡 1. Cancelled ဖြစ်ထားခဲ့သော Voucher ကို ပြန်ဖွင့်ပါက မူလ Stock မှ ပြန်နှုတ်ခြင်း
-    if (wasCancelled && isNowActive) {
+    // 💡 Cancelled ဖြစ်ထားသော Order ကို အခြား မည်သည့် Status သို့မဆို ပြန်ပြောင်းပါက
+    // Cancel ဖြစ်စဉ်က In-Stock ထဲ ပြန်ပေါင်းထားခဲ့သော Stock များကို ပြန်လည်နှုတ်ယူခြင်း
+    if (wasCancelled && !isNowCancelled) {
       for (const ordItem of targetOrder.items) {
         const stockItem = items.find(i => i.id === ordItem.itemId);
         if (stockItem) {
@@ -976,7 +972,7 @@ export default function App() {
           }));
         }
       }
-      addLog(`Restored Cancelled Order ${orderId} to '${newStatus}': Deducted stock from original Inventory.`);
+      addLog(`Re-activated Cancelled Order ${orderId} to '${newStatus}': Deducted restored stock back from main Inventory.`);
     }
 
     // 💡 2. Delivery Return ဖြစ်ထားခဲ့သော Voucher ကို အခြား Status (Pending/In-Transit/Delivered/Cancelled) သို့ ပြောင်းပါက
