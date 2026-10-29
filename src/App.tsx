@@ -766,69 +766,91 @@ export default function App() {
     }
   };
 
-  // --- RULE 1 & 2 & 3: Updated Delivery Return Cancel Logic & Delivered Protection & Status Restore Sync ---
   const handleCancelReturnItem = async (ret) => {
-    // Check if associated order is already Delivered (Rule 2: Delivered Protection)
-    if (ret.orderId) {
-      const associatedOrder = orders.find(o => o.id === ret.orderId);
-      if (associatedOrder && associatedOrder.status === 'Delivered') {
-        alert('ဤအော်ဒါသည် Delivered ဖြစ်ပြီးသားဖြစ်ပါသဖြင့် Return ကို Cancel လုပ်ခွင့်မရှိပါ။');
-        return;
-      }
-    }
-
-    if (confirm(`Return record ${ret.id} ကို Cancel လုပ်မည် သေချာပါသလား? (Delivery Return ဖြစ်ပါက Inventory သို့ Stock မပေါင်းတော့ဘဲ သက်ဆိုင်ရာ Order Status ကို Pending သို့ ပြန်ပြောင်းပေးမည်။)`)) {
+    if (confirm(`Return record ${ret.id} ကို Cancel လုပ်မည် သေချာပါသလား? (မူလ Order ကို ပြန်လည်ပြင်ဆင်ပြီး Stock များကို မှန်ကန်စွာ ချိန်ညှိသွားမည် ဖြစ်ပါသည်။)`)) {
       try {
         await fetch(`${API_BASE_URL}/api/returns/${ret.id}`, { method: 'DELETE' });
       } catch (e) {}
 
-      // If it's a Delivery Return, we remove the returned batch item from inventory that was added during Delivery Return, and update order status to Pending
-      if (ret.type === 'Delivery Return' && ret.orderId) {
-        // Remove the return batch item from items list
-        setItems(prev => prev.filter(i => !i.sku.includes(`${ret.orderId}`) && i.id !== ret.itemId));
+      // သက်ဆိုင်ရာ မူလ Order ကို ရှာဖွေခြင်း
+      const targetOrder = orders.find(o => o.id === ret.orderId);
 
-        // Update corresponding order status back to Pending and un-cancel
-        setOrders(prev => prev.map(o => {
-          if (o.id === ret.orderId) {
-            return {
-              ...o,
-              status: 'Pending',
-              cancelled: false,
-              codCollected: false,
-              items: o.items.map(it => ({ ...it, status: 'Pending' }))
-            };
-          }
-          return o;
-        }));
+      if (targetOrder) {
+        if (targetOrder.status === 'Delivery Return') {
+          // 1. Delivery Return ကို Cancel လိုက်ခြင်း (Order တစ်ခုလုံး ပို့ပြီးသားဖြစ်သွားခြင်း)
+          // ဂိုဒေါင်ထဲ ယာယီထည့်ထားခဲ့သော Return Batch ကို Inventory မှ ဖယ်ရှားခြင်း
+          setItems(prev => prev.filter(i => {
+            const matchesOriginal = targetOrder.items.some(oi => i.sku === `${items.find(x => x.id === oi.itemId)?.sku}-RET`);
+            return !matchesOriginal;
+          }));
 
-        // Also update backend order status
-        try {
-          const targetOrd = orders.find(o => o.id === ret.orderId);
-          if (targetOrd) {
-            const updatedOrd = { ...targetOrd, status: 'Pending', cancelled: false, codCollected: false };
-            await fetch(`${API_BASE_URL}/api/orders/${ret.orderId}`, {
+          // မူလ Order Status ကို 'Delivered' သို့ ပြန်ပြောင်းခြင်း
+          const updatedOrder = {
+            ...targetOrder,
+            status: 'Delivered',
+            cancelled: false,
+            codCollected: true,
+            updatedBy: currentUser?.name || 'Staff'
+          };
+
+          try {
+            await fetch(`${API_BASE_URL}/api/orders/${targetOrder.id}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(updatedOrd)
+              body: JSON.stringify(updatedOrder)
             });
-          }
-        } catch (err) {}
+          } catch (e) {}
 
-        addLog(`Cancelled Delivery Return ${ret.id}: Reverted Order ${ret.orderId} status to Pending and cleaned up return batch stock.`);
-      } else {
-        // Standard manual return cancellation (restores to normal inventory if needed or handled as before)
-        if (ret.itemId) {
-          setItems(prev => prev.map(i => {
-            if (i.id === ret.itemId) {
-              return { ...i, quantity: (Number(i.quantity) || 0) + (Number(ret.qty) || 0) };
+          setOrders(prev => prev.map(o => o.id === targetOrder.id ? updatedOrder : o));
+
+        } else if (targetOrder.status === 'Partial Return') {
+          // 2. Partial Return ကို Cancel လိုက်ခြင်း (ပစ္စည်းအချို့ ပြန်မလာတော့ဘဲ အားလုံး ယူသွားခြင်း)
+          // Inventory မှ အဆိုပါ Return Batch ကို ဖယ်ရှားခြင်း
+          setItems(prev => prev.filter(i => i.id !== ret.itemId && !i.sku?.includes('-PRET')));
+
+          // မူလ Order ထဲသို့ Return ပြန်လာခဲ့သော အရေအတွက်ကို ပြန်လည် ပေါင်းထည့်ခြင်း
+          let newItemTotal = 0;
+          const restoredOrderItems = targetOrder.items.map(it => {
+            if (it.itemId === ret.itemId) {
+              const restoredQty = it.qty + ret.qty;
+              newItemTotal += ((Number(it.price) || 0) - (Number(it.discount) || 0)) * restoredQty;
+              return { ...it, qty: restoredQty };
+            } else {
+              newItemTotal += ((Number(it.price) || 0) - (Number(it.discount) || 0)) * it.qty;
+              return it;
             }
-            return i;
-          }));
+          });
+
+          const newTotalCod = newItemTotal + (Number(targetOrder.deliveryFee) || 0);
+
+          // ဤအော်ဒါတွင် အခြား Return တွေ ကျန်သေးလား စစ်ဆေးပြီး Status သတ်မှတ်ခြင်း
+          const remainingReturns = returns.filter(r => r.orderId === targetOrder.id && r.id !== ret.id);
+          const newStatus = remainingReturns.length === 0 ? 'Delivered' : 'Partial Return';
+
+          const updatedOrder = {
+            ...targetOrder,
+            status: newStatus,
+            items: restoredOrderItems,
+            itemTotal: newItemTotal,
+            totalCod: newTotalCod,
+            codCollected: true,
+            updatedBy: currentUser?.name || 'Staff'
+          };
+
+          try {
+            await fetch(`${API_BASE_URL}/api/orders/${targetOrder.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(updatedOrder)
+            });
+          } catch (e) {}
+
+          setOrders(prev => prev.map(o => o.id === targetOrder.id ? updatedOrder : o));
         }
       }
 
       setReturns(returns.filter(r => r.id !== ret.id));
-      addLog(`Cancelled return record ${ret.id}.`);
+      addLog(`Cancelled return record ${ret.id}, restored order status to Delivered, and aligned inventory stock balance.`);
     }
   };
 
@@ -853,7 +875,7 @@ export default function App() {
         qty: Number(it.qty) || 1,
         price: price,
         discount: Number(it.discount) || 0,
-        status: 'Pending'
+        status: 'Delivered'
       };
     });
 
@@ -904,8 +926,7 @@ export default function App() {
     setShowOrderModal(false);
   };
 
-  // --- RULE 3: Status Restoring & Stock/Return Sync when restoring from Cancelled / Returns to Pending/In-Transit ---
-  const handleUpdateOrderStatus = async (orderId, newStatus, newTracking) => {
+ const handleUpdateOrderStatus = async (orderId, newStatus, newTracking) => {
     const targetOrder = orders.find(o => o.id === orderId);
     if (!targetOrder) return;
     
@@ -924,38 +945,6 @@ export default function App() {
       return;
     }
 
-    // Rule 3 Check: If restoring from Cancelled, Delivery Return, or Partial Return TO Pending or In-Transit
-    const wasIncompatible = targetOrder.cancelled || targetOrder.status === 'Delivery Return' || targetOrder.status === 'Partial Return';
-    const restoringToActive = newStatus === 'Pending' || newStatus === 'In-Transit';
-
-    if (wasIncompatible && restoringToActive) {
-      // Remove corresponding return records from Returns tab and inventory return batches
-      setReturns(prev => prev.filter(r => r.orderId !== orderId));
-      try {
-        // Optionally delete return records from backend if needed
-        const matchedReturns = returns.filter(r => r.orderId === orderId);
-        for (const ret of matchedReturns) {
-          await fetch(`${API_BASE_URL}/api/returns/${ret.id}`, { method: 'DELETE' }).catch(() => {});
-        }
-      } catch (e) {}
-
-      // Remove return batch items from inventory that were added due to this order's return
-      setItems(prev => prev.filter(i => !i.sku.includes(orderId)));
-
-      // If it was previously Cancelled (where stock was originally deducted upon order creation), re-deduct stock if restoring to active
-      if (targetOrder.status === 'Cancelled' && !targetOrder.cancelled) {
-        for (const ordItem of targetOrder.items) {
-          setItems(prev => prev.map(i => {
-            if (i.id === ordItem.itemId) {
-              return { ...i, quantity: Math.max(0, (Number(i.quantity) || 0) - (Number(ordItem.qty) || 0)) };
-            }
-            return i;
-          }));
-        }
-      }
-      addLog(`Restored Order ${orderId} from ${targetOrder.status} to ${newStatus}: Synced and removed associated return records and stock batches.`);
-    }
-
     if (newStatus === 'Partial Return') {
       setTargetPartialOrder(targetOrder);
       setPartialItemsForm(targetOrder.items.map(it => ({
@@ -971,11 +960,33 @@ export default function App() {
       return;
     }
 
+    const wasCancelledOrReturned = targetOrder.cancelled || targetOrder.status === 'Delivery Return' || targetOrder.status === 'Partial Return';
+    const isNowActive = newStatus === 'Pending' || newStatus === 'In-Transit' || newStatus === 'Delivered';
+
+    // 💡 Logic အသစ်: Cancelled/Returned ဖြစ်ထားသော Voucher ကို Pending / In-Transit သို့ ပြန်ပြောင်းပါက Stock ပြန်နှုတ်ခြင်း
+    if (wasCancelledOrReturned && isNowActive) {
+      for (const ordItem of targetOrder.items) {
+        const stockItem = items.find(i => i.id === ordItem.itemId);
+        if (stockItem) {
+          setItems(prev => prev.map(i => {
+            if (i.id === stockItem.id) {
+              return { ...i, quantity: Math.max(0, (Number(i.quantity) || 0) - (Number(ordItem.qty) || 0)) };
+            }
+            return i;
+          }));
+        }
+      }
+
+      // ယခင်က ထွက်ထားသော Return Record များကိုလည်း ပြန်လည် ရှင်းလင်းပေးခြင်း
+      setReturns(prev => prev.filter(r => r.orderId !== orderId));
+      addLog(`Restored Order ${orderId} status to '${newStatus}': Deducted stock from Inventory and cleared related return records.`);
+    }
+
     const isDelivered = newStatus === 'Delivered';
     const isCancelled = newStatus === 'Cancelled';
     const isDeliveryReturn = newStatus === 'Delivery Return';
 
-    // Restore stock to inventory if order is CANCELLED
+    // Cancelled ဖြစ်သွားပါက Stock ပြန်ပေါင်းခြင်း
     if (isCancelled && !targetOrder.cancelled) {
       for (const ordItem of targetOrder.items) {
         const stockItem = items.find(i => i.id === ordItem.itemId);
@@ -1006,13 +1017,10 @@ export default function App() {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedFields)
-      }).catch(() => fetch(`${API_BASE_URL}/api/orders`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedFields)
-      }));
+      });
     } catch (e) {}
 
+    // Delivery Return အသစ် ဖြစ်လာပါက Return Batch ထည့်ခြင်း
     if (isDeliveryReturn && targetOrder.status !== 'Delivery Return') {
       for (const ordItem of targetOrder.items) {
         const stockItem = items.find(i => i.id === ordItem.itemId);
@@ -1028,7 +1036,7 @@ export default function App() {
             quantity: ordItem.qty,
             damagedQty: 0,
             stockInDate: todayStr,
-            sku: `${stockItem.sku}-${targetOrder.id}-RET`,
+            sku: `${stockItem.sku}-RET`,
             handlingFee: stockItem.handlingFee,
             storeChargePerDay: stockItem.storeChargePerDay,
             freeDays: stockItem.freeDays
@@ -1057,7 +1065,6 @@ export default function App() {
         });
       } catch (e) {}
       setReturns(prev => [newReturnObj, ...prev]);
-      addNotification('Delivery Return', `Order ${targetOrder.id} returned from delivery.`, 'return');
     }
 
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, ...updatedFields } : o));
@@ -1106,7 +1113,7 @@ export default function App() {
             quantity: returnedQ,
             damagedQty: 0,
             stockInDate: todayStr,
-            sku: `${stockItem.sku}-${targetPartialOrder.id}-PRET`,
+            sku: `${stockItem.sku}-PRET`,
             handlingFee: stockItem.handlingFee,
             storeChargePerDay: stockItem.storeChargePerDay,
             freeDays: stockItem.freeDays
@@ -1163,14 +1170,11 @@ export default function App() {
     setTargetPartialOrder(null);
   };
 
-  // --- RULE 4: Partial Return Protection against Deletion ---
-  const handleDeleteVoucher = async (orderId) => {
+const handleDeleteVoucher = async (orderId) => {
     const targetOrder = orders.find(o => o.id === orderId);
-    if (!targetOrder) return;
-
-    // Prevent deleting Partial Return vouchers because they are still active / working
-    if (targetOrder.status === 'Partial Return') {
-      alert('Partial Return ဖြစ်နေသော Voucher များကို ပစ္စည်းအချို့ Delivered ဖြစ်ပြီး ဆက်လက် အလုပ်လုပ်နေဆဲ (Active ဖြစ်နေဆဲ) ဖြစ်သောကြောင့် ဖျက်၍မရပါ။');
+    
+    if (targetOrder?.status === 'Partial Return') {
+      alert('Partial Return အခြေအနေရှိသော Voucher များကို ဖျက်ဆီးခွင့် လုံးဝ မရှိပါ။');
       return;
     }
 
@@ -1178,11 +1182,13 @@ export default function App() {
       alert('ဤ Voucher သည် COD ငွေအဝင်စာရင်း ပြီးစီးပြီးဖြစ်သဖြင့် ဖျက်၍မရပါ။');
       return;
     }
+
     if (currentUser?.role !== 'Admin') {
       alert('ခွင့်ပြုချက်မရှိပါ: Voucher များကို ဖျက်ရန် Admin အဆင့် လိုအပ်ပါသည်။');
       return;
     }
-    if (!targetOrder.cancelled) {
+
+    if (!targetOrder?.cancelled) {
       alert('ခွင့်ပြုချက်မရှိပါ: Cancelled ဖြစ်နေသော Voucher များကိုသာ ဖျက်ခွင့်ရှိပါသည်။');
       return;
     }
@@ -2130,6 +2136,60 @@ export default function App() {
             </div>
           </div>
         )}
+const handleCancelReturnItem = async (ret) => {
+    // ဤ Return ၏ Order မှာ COD ရှင်းပြီးသား ဖြစ်နေပါက လုံးဝ (လုံးဝ) Cancel ခွင့်မပြုပါ
+    if (ret.orderId && codCollectedVoucherIds.has(ret.orderId)) {
+      alert('ဤ Return နှင့် သက်ဆိုင်သော Voucher မှာ ငွေစာရင်း (COD Flow) ရှင်းလင်းပြီးဖြစ်သဖြင့် Cancel လုပ်၍မရတော့ပါ။');
+      return;
+    }
+
+    if (confirm(`Return record ${ret.id} ကို Cancel လုပ်မည် သေချာပါသလား?`)) {
+      // ... (ကျန်သည့် cancel logic များ ဆက်သွားမည်) ...
+    }
+  };
+
+{/* Returns Table mapping အထဲတွင် */}
+{scopedReturns.map(ret => {
+  const isSelected = selectedReturnIds.includes(ret.id);
+  const todayDateStr = new Date().toLocaleDateString();
+  const isTodayReturn = ret.date === todayDateStr;
+  
+  // ဤ Return နှင့် သက်ဆိုင်သော Order တွင် COD အဝင်စာရင်း ပြီးစီးသွားပြီလား စစ်ဆေးခြင်း
+  const isCodDone = ret.orderId ? codCollectedVoucherIds.has(ret.orderId) : false;
+
+  return (
+    <tr key={ret.id} className="hover:bg-slate-50">
+      {/* ... (Other table cells) ... */}
+      <td className="p-3 text-right space-x-2">
+        {isTodayReturn && !isCodDone ? (
+          <>
+            <button 
+              onClick={() => {
+                setEditingReturnItem(ret);
+                setEditReturnForm({ itemName: ret.itemName, qty: ret.qty, reason: ret.reason });
+                setShowEditReturnModal(true);
+              }}
+              className="text-xs text-indigo-600 hover:underline font-semibold"
+            >
+              Edit
+            </button>
+            <button 
+              onClick={() => handleCancelReturnItem(ret)}
+              className="text-xs text-rose-600 hover:underline font-semibold"
+            >
+              Cancel
+            </button>
+          </>
+        ) : (
+          <span className="text-[10px] text-slate-400 font-medium">
+            {isCodDone ? '🔒 Locked (COD Settled)' : 'Locked (Past Date)'}
+          </span>
+        )}
+      </td>
+    </tr>
+  );
+})}
+
 
         {/* Vendors Tab */}
         {activeTab === 'settlements' && currentUser.role !== 'Vendor' && (
@@ -2148,6 +2208,11 @@ export default function App() {
                   <Plus className="w-4 h-4 mr-1" /><span>Register New Vendor</span>
                 </button>
               )}
+{currentUser.role === 'Admin' && order.cancelled && order.status !== 'Partial Return' && !isCodDone && (
+  <button onClick={() => handleDeleteVoucher(order.id)} className="bg-rose-50 hover:bg-rose-100 text-rose-700 p-1.5 rounded text-[11px] font-semibold inline-flex items-center space-x-1">
+    <Trash2 className="w-3.5 h-3.5" /><span>Delete</span>
+  </button>
+)} 
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -3304,7 +3369,7 @@ export default function App() {
         </div>
       )}
 
-      {showVoucherModal && selectedOrder && (
+    {showVoucherModal && selectedOrder && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:p-0 print:bg-white">
           
           {/* Print Styling CSS to hide everything except voucher */}
