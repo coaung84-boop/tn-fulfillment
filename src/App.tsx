@@ -762,7 +762,7 @@ export default function App() {
       return;
     }
 
-    if (confirm(`Return record ${ret.id} ကို Cancel လုပ်မည် သေချာပါသလား? (မူလ Order ကို ပြန်လည်ပြင်ဆင်ပြီး Stock များကို မှန်ကန်စွာ ချိန်ညှိသွားမည် ဖြစ်ပါသည်။)`)) {
+    if (confirm(`Return record ${ret.id} ကို Cancel လုပ်မည် သေချာပါသလား? (မူလ Order ကို ပြန်လည်ပြင်ဆင်ပြီး Return Batch များကိုသာ ရှင်းလင်းသွားမည် ဖြစ်ပါသည်။)`)) {
       try {
         await fetch(`${API_BASE_URL}/api/returns/${ret.id}`, { method: 'DELETE' });
       } catch (e) {}
@@ -771,6 +771,7 @@ export default function App() {
 
       if (targetOrder) {
         if (targetOrder.status === 'Delivery Return') {
+          // Delivery Return Cancel လิက်ခြင်း
           setItems(prev => prev.filter(i => {
             const matchesOriginal = targetOrder.items.some(oi => i.sku === `${items.find(x => x.id === oi.itemId)?.sku}-RET`);
             return !matchesOriginal;
@@ -795,7 +796,16 @@ export default function App() {
           setOrders(prev => prev.map(o => o.id === targetOrder.id ? updatedOrder : o));
 
         } else if (targetOrder.status === 'Partial Return') {
-          setItems(prev => prev.filter(i => i.id !== ret.itemId && !i.sku?.includes('-PRET')));
+          // 💡 Partial Return Cancel လိုက်ခြင်း (မူလ In-stock qty ကို လုံးဝ မထိဘဲ -PRET return batch ကိုသာ ဖယ်ရှားမည်)
+          const targetStockItem = items.find(x => x.id === ret.itemId);
+          
+          setItems(prev => prev.filter(i => {
+            // ဤ Return နှင့် သက်ဆိုင်သော -PRET batch ကိုသာ ဂိုဒေါင်မှ ဖယ်ရှားမည် (မူလ In-stock item ကို လုံးဝ မထိပါ)
+            if (targetStockItem && i.sku === `${targetStockItem.sku}-PRET`) {
+              return false;
+            }
+            return true;
+          }));
 
           let newItemTotal = 0;
           const restoredOrderItems = targetOrder.items.map(it => {
@@ -836,7 +846,7 @@ export default function App() {
       }
 
       setReturns(returns.filter(r => r.id !== ret.id));
-      addLog(`Cancelled return record ${ret.id}, restored order status to Delivered, and aligned inventory stock balance.`);
+      addLog(`Cancelled return record ${ret.id}, restored order status, and cleaned up return batch without affecting main stock.`);
     }
   };
 
