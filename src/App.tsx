@@ -959,6 +959,10 @@ export default function App() {
     const wasDeliveryReturn = targetOrder.status === 'Delivery Return';
     const isNowActive = newStatus === 'Pending' || newStatus === 'In-Transit' || newStatus === 'Delivered';
 
+    const isDelivered = newStatus === 'Delivered';
+    const isCancelled = newStatus === 'Cancelled';
+    const isDeliveryReturn = newStatus === 'Delivery Return';
+
     // 💡 1. Cancelled ဖြစ်ထားခဲ့သော Voucher ကို ပြန်ဖွင့်ပါက မူလ Stock မှ ပြန်နှုတ်ခြင်း
     if (wasCancelled && isNowActive) {
       for (const ordItem of targetOrder.items) {
@@ -975,9 +979,9 @@ export default function App() {
       addLog(`Restored Cancelled Order ${orderId} to '${newStatus}': Deducted stock from original Inventory.`);
     }
 
-    // 💡 2. Delivery Return ဖြစ်ထားခဲ့သော Voucher ကို အခြား Status သို့ ပြန်ပြောင်းပါက 
-    // မူလ In-stock ကို မနှုတ်ဘဲ Delivery Return တုန်းက ထုတ်ခဲ့သော -RET Return Batch ကိုသာ Inventory မှ ဖယ်ရှားခြင်း
-    if (wasDeliveryReturn && isNowActive) {
+    // 💡 2. Delivery Return ဖြစ်ထားခဲ့သော Voucher ကို အခြား Status (Pending/In-Transit/Delivered/Cancelled) သို့ ပြောင်းပါက
+    // Delivery Return တုန်းက ထုတ်ခဲ့သော -RET Return Batch ကို ဖယ်ရှားပြီး Return Record ကိုပါ ရှင်းထုတ်ခြင်း
+    if (wasDeliveryReturn && !isDeliveryReturn) {
       setItems(prev => prev.filter(i => {
         const matchesOriginal = targetOrder.items.some(oi => {
           const mainItem = items.find(x => x.id === oi.itemId);
@@ -986,16 +990,12 @@ export default function App() {
         return !matchesOriginal;
       }));
 
-      // သက်ဆိုင်ရာ Return Record ကိုလည်း ရှင်းလင်းခြင်း
+      // Return Record ကိုပါ ရှင်းလင်းခြင်း
       setReturns(prev => prev.filter(r => r.orderId !== orderId));
-      addLog(`Restored Delivery Return Order ${orderId} to '${newStatus}': Cleared Return Batch (-RET) from Inventory without affecting main stock.`);
+      addLog(`Changed Order ${orderId} from Delivery Return to '${newStatus}': Cleared Return Batch (-RET) and Return Records.`);
     }
 
-    const isDelivered = newStatus === 'Delivered';
-    const isCancelled = newStatus === 'Cancelled';
-    const isDeliveryReturn = newStatus === 'Delivery Return';
-
-    // Cancelled ဖြစ်သွားပါက မူလ Stock ပြန်ပေါင်းခြင်း
+    // 💡 3. ယခုမှ Cancelled ဖြစ်သွားပါက မူလ Vendor Stock ထဲသို့ Qty ပြန်ပေါင်းပေးခြင်း
     if (isCancelled && targetOrder.status !== 'Cancelled') {
       for (const ordItem of targetOrder.items) {
         const stockItem = items.find(i => i.id === ordItem.itemId);
@@ -1029,7 +1029,7 @@ export default function App() {
       });
     } catch (e) {}
 
-    // Delivery Return ဖြစ်လာပါက Return Batch အသစ်ထည့်ခြင်း
+    // 💡 4. Delivery Return အသစ် ဖြစ်လာပါက Return Batch နှင့် Return Record အသစ်ထည့်ခြင်း
     if (isDeliveryReturn && targetOrder.status !== 'Delivery Return') {
       for (const ordItem of targetOrder.items) {
         const stockItem = items.find(i => i.id === ordItem.itemId);
