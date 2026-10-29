@@ -757,21 +757,27 @@ export default function App() {
   };
 
   const handleCancelReturnItem = async (ret) => {
+    // 1. COD Flow (ငွေစာရင်းရှင်းလင်းပြီးသား) ဖြစ်လျှင် Cancel ခွင့်မပြုပါ
     if (ret.orderId && codCollectedVoucherIds.has(ret.orderId)) {
       alert('ဤ Return နှင့် သက်ဆိုင်သော Voucher မှာ ငွေစာရင်း (COD Flow) ရှင်းလင်းပြီးဖြစ်သဖြင့် Cancel လုပ်၍မရတော့ပါ။');
       return;
     }
 
-    if (confirm(`Return record ${ret.id} ကို Cancel လုပ်မည် သေချာပါသလား? (မူလ Order ကို ပြန်လည်ပြင်ဆင်ပြီး Return Batch များကိုသာ ရှင်းလင်းသွားမည် ဖြစ်ပါသည်။)`)) {
+    // 💡 2. သက်ဆိုင်ရာ Order ၏ Status မှာ Delivered ဖြစ်သွားပြီဆိုလျှင် Return ကို Cancel လုပ်ခွင့်မပြုပါ
+    const targetOrder = orders.find(o => o.id === ret.orderId);
+    if (targetOrder && targetOrder.status === 'Delivered') {
+      alert('ဤအော်ဒါ၏ Status မှာ Delivered ဖြစ်သွားပြီဖြစ်သဖြင့် Return ကို Cancel လုပ်၍မရတော့ပါ။');
+      return;
+    }
+
+    if (confirm(`Return record ${ret.id} ကို Cancel လုပ်မည် သေချာပါသလား?`)) {
       try {
         await fetch(`${API_BASE_URL}/api/returns/${ret.id}`, { method: 'DELETE' });
       } catch (e) {}
 
-      const targetOrder = orders.find(o => o.id === ret.orderId);
-
       if (targetOrder) {
+        // --- A. Delivery Return Cancel လုပ်ခြင်း ---
         if (targetOrder.status === 'Delivery Return') {
-          // Delivery Return Cancel လิက်ခြင်း
           setItems(prev => prev.filter(i => {
             const matchesOriginal = targetOrder.items.some(oi => i.sku === `${items.find(x => x.id === oi.itemId)?.sku}-RET`);
             return !matchesOriginal;
@@ -795,12 +801,11 @@ export default function App() {
 
           setOrders(prev => prev.map(o => o.id === targetOrder.id ? updatedOrder : o));
 
+        // --- B. Partial Return Cancel လုပ်ခြင်း ---
         } else if (targetOrder.status === 'Partial Return') {
-          // 💡 Partial Return Cancel လိုက်ခြင်း (မူလ In-stock qty ကို လုံးဝ မထိဘဲ -PRET return batch ကိုသာ ဖယ်ရှားမည်)
           const targetStockItem = items.find(x => x.id === ret.itemId);
           
           setItems(prev => prev.filter(i => {
-            // ဤ Return နှင့် သက်ဆိုင်သော -PRET batch ကိုသာ ဂိုဒေါင်မှ ဖယ်ရှားမည် (မူလ In-stock item ကို လုံးဝ မထိပါ)
             if (targetStockItem && i.sku === `${targetStockItem.sku}-PRET`) {
               return false;
             }
@@ -843,10 +848,20 @@ export default function App() {
 
           setOrders(prev => prev.map(o => o.id === targetOrder.id ? updatedOrder : o));
         }
+      } else {
+        // --- C. Manual Return Cancel လုပ်လျှင် Stock ပြန်ပေါင်းပေးမည် ---
+        if (ret.itemId) {
+          setItems(prev => prev.map(i => {
+            if (i.id === ret.itemId) {
+              return { ...i, quantity: (Number(i.quantity) || 0) + (Number(ret.qty) || 0) };
+            }
+            return i;
+          }));
+        }
       }
 
-      setReturns(returns.filter(r => r.id !== ret.id));
-      addLog(`Cancelled return record ${ret.id}, restored order status, and cleaned up return batch without affecting main stock.`);
+      setReturns(prev => prev.filter(r => r.id !== ret.id));
+      addLog(`Cancelled return record ${ret.id} and restored inventory/order statuses correctly.`);
     }
   };
 
