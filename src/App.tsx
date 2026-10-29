@@ -243,7 +243,6 @@ export default function App() {
     }
   };
 
-  // Dynamic Delivery Name Lookup to support edits instantly across tables & vouchers
   const getDeliveryName = (order) => {
     if (order.deliveryServiceId) {
       const found = deliveries.find(d => d.id === order.deliveryServiceId);
@@ -292,7 +291,6 @@ export default function App() {
     return ids;
   }, [cashLedger]);
 
-  // Scoped Items with Unified Search
   const scopedItems = useMemo(() => {
     let res = items;
     if (currentUser && currentUser.role === 'Vendor') {
@@ -311,7 +309,6 @@ export default function App() {
     return res;
   }, [items, currentUser, invSearchMode, invSearchVal, vendors]);
 
-  // Scoped Orders with Unified Search
   const scopedOrders = useMemo(() => {
     let res = orders;
     if (currentUser && currentUser.role === 'Vendor') {
@@ -335,7 +332,6 @@ export default function App() {
     return res;
   }, [orders, currentUser, deliveryFilter, orderSearchMode, orderSearchVal, vendors, deliveries]);
 
-  // Scoped Returns with Unified Search
   const scopedReturns = useMemo(() => {
     let res = returns;
     if (currentUser && currentUser.role === 'Vendor') {
@@ -356,7 +352,6 @@ export default function App() {
     return res;
   }, [returns, currentUser, retSearchMode, retSearchVal, vendors]);
 
-  // Scoped Cash Ledger with Unified Search
   const scopedCashLedger = useMemo(() => {
     let res = cashLedger;
     if (cashSearchVal.trim()) {
@@ -374,10 +369,8 @@ export default function App() {
 
   function calculateStoreCharge(item, targetDate = new Date()) {
     const vendor = vendors.find(v => v.id === item.vendorId);
-    
     const stockIn = new Date(item.stockInDate);
     const diffDays = Math.floor((targetDate.getTime() - stockIn.getTime()) / (1000 * 60 * 60 * 24));
-    
     const freeDays = item.freeDays !== undefined ? Number(item.freeDays) : (vendor ? vendor.freeStorageDays : 7);
     const dailyFee = item.storeChargePerDay !== undefined ? Number(item.storeChargePerDay) : (vendor ? vendor.dailyStoreFee : 30);
 
@@ -570,7 +563,6 @@ export default function App() {
     reader.readAsText(file);
   };
 
-  // Persist User to Backend
   const handleSaveUser = async (e) => {
     e.preventDefault();
     if (!newUser.username) return;
@@ -631,7 +623,6 @@ export default function App() {
     }
   };
 
-  // Persist Vendor to Backend
   const handleSaveVendor = async (e) => {
     e.preventDefault();
     if (!newVendor.name || !newVendor.phone) return;
@@ -692,7 +683,6 @@ export default function App() {
     }
   };
 
-  // Persist Delivery to Backend
   const handleSaveDelivery = async (e) => {
     e.preventDefault();
     if (!newDelivery.name || !newDelivery.phone) return;
@@ -767,24 +757,25 @@ export default function App() {
   };
 
   const handleCancelReturnItem = async (ret) => {
+    if (ret.orderId && codCollectedVoucherIds.has(ret.orderId)) {
+      alert('ဤ Return နှင့် သက်ဆိုင်သော Voucher မှာ ငွေစာရင်း (COD Flow) ရှင်းလင်းပြီးဖြစ်သဖြင့် Cancel လုပ်၍မရတော့ပါ။');
+      return;
+    }
+
     if (confirm(`Return record ${ret.id} ကို Cancel လုပ်မည် သေချာပါသလား? (မူလ Order ကို ပြန်လည်ပြင်ဆင်ပြီး Stock များကို မှန်ကန်စွာ ချိန်ညှိသွားမည် ဖြစ်ပါသည်။)`)) {
       try {
         await fetch(`${API_BASE_URL}/api/returns/${ret.id}`, { method: 'DELETE' });
       } catch (e) {}
 
-      // သက်ဆိုင်ရာ မူလ Order ကို ရှာဖွေခြင်း
       const targetOrder = orders.find(o => o.id === ret.orderId);
 
       if (targetOrder) {
         if (targetOrder.status === 'Delivery Return') {
-          // 1. Delivery Return ကို Cancel လိုက်ခြင်း (Order တစ်ခုလုံး ပို့ပြီးသားဖြစ်သွားခြင်း)
-          // ဂိုဒေါင်ထဲ ယာယီထည့်ထားခဲ့သော Return Batch ကို Inventory မှ ဖယ်ရှားခြင်း
           setItems(prev => prev.filter(i => {
             const matchesOriginal = targetOrder.items.some(oi => i.sku === `${items.find(x => x.id === oi.itemId)?.sku}-RET`);
             return !matchesOriginal;
           }));
 
-          // မူလ Order Status ကို 'Delivered' သို့ ပြန်ပြောင်းခြင်း
           const updatedOrder = {
             ...targetOrder,
             status: 'Delivered',
@@ -804,11 +795,8 @@ export default function App() {
           setOrders(prev => prev.map(o => o.id === targetOrder.id ? updatedOrder : o));
 
         } else if (targetOrder.status === 'Partial Return') {
-          // 2. Partial Return ကို Cancel လိုက်ခြင်း (ပစ္စည်းအချို့ ပြန်မလာတော့ဘဲ အားလုံး ယူသွားခြင်း)
-          // Inventory မှ အဆိုပါ Return Batch ကို ဖယ်ရှားခြင်း
           setItems(prev => prev.filter(i => i.id !== ret.itemId && !i.sku?.includes('-PRET')));
 
-          // မူလ Order ထဲသို့ Return ပြန်လာခဲ့သော အရေအတွက်ကို ပြန်လည် ပေါင်းထည့်ခြင်း
           let newItemTotal = 0;
           const restoredOrderItems = targetOrder.items.map(it => {
             if (it.itemId === ret.itemId) {
@@ -822,8 +810,6 @@ export default function App() {
           });
 
           const newTotalCod = newItemTotal + (Number(targetOrder.deliveryFee) || 0);
-
-          // ဤအော်ဒါတွင် အခြား Return တွေ ကျန်သေးလား စစ်ဆေးပြီး Status သတ်မှတ်ခြင်း
           const remainingReturns = returns.filter(r => r.orderId === targetOrder.id && r.id !== ret.id);
           const newStatus = remainingReturns.length === 0 ? 'Delivered' : 'Partial Return';
 
@@ -854,7 +840,6 @@ export default function App() {
     }
   };
 
-  // Persist Order to Backend
   const handleCreateOrder = async (e) => {
     e.preventDefault();
     if (!newOrder.vendorId || newOrder.items.length === 0) return;
@@ -926,7 +911,7 @@ export default function App() {
     setShowOrderModal(false);
   };
 
- const handleUpdateOrderStatus = async (orderId, newStatus, newTracking) => {
+  const handleUpdateOrderStatus = async (orderId, newStatus, newTracking) => {
     const targetOrder = orders.find(o => o.id === orderId);
     if (!targetOrder) return;
     
@@ -963,7 +948,6 @@ export default function App() {
     const wasCancelledOrReturned = targetOrder.cancelled || targetOrder.status === 'Delivery Return' || targetOrder.status === 'Partial Return';
     const isNowActive = newStatus === 'Pending' || newStatus === 'In-Transit' || newStatus === 'Delivered';
 
-    // 💡 Logic အသစ်: Cancelled/Returned ဖြစ်ထားသော Voucher ကို Pending / In-Transit သို့ ပြန်ပြောင်းပါက Stock ပြန်နှုတ်ခြင်း
     if (wasCancelledOrReturned && isNowActive) {
       for (const ordItem of targetOrder.items) {
         const stockItem = items.find(i => i.id === ordItem.itemId);
@@ -977,7 +961,6 @@ export default function App() {
         }
       }
 
-      // ယခင်က ထွက်ထားသော Return Record များကိုလည်း ပြန်လည် ရှင်းလင်းပေးခြင်း
       setReturns(prev => prev.filter(r => r.orderId !== orderId));
       addLog(`Restored Order ${orderId} status to '${newStatus}': Deducted stock from Inventory and cleared related return records.`);
     }
@@ -986,7 +969,6 @@ export default function App() {
     const isCancelled = newStatus === 'Cancelled';
     const isDeliveryReturn = newStatus === 'Delivery Return';
 
-    // Cancelled ဖြစ်သွားပါက Stock ပြန်ပေါင်းခြင်း
     if (isCancelled && !targetOrder.cancelled) {
       for (const ordItem of targetOrder.items) {
         const stockItem = items.find(i => i.id === ordItem.itemId);
@@ -1020,7 +1002,6 @@ export default function App() {
       });
     } catch (e) {}
 
-    // Delivery Return အသစ် ဖြစ်လာပါက Return Batch ထည့်ခြင်း
     if (isDeliveryReturn && targetOrder.status !== 'Delivery Return') {
       for (const ordItem of targetOrder.items) {
         const stockItem = items.find(i => i.id === ordItem.itemId);
@@ -1170,7 +1151,7 @@ export default function App() {
     setTargetPartialOrder(null);
   };
 
-const handleDeleteVoucher = async (orderId) => {
+  const handleDeleteVoucher = async (orderId) => {
     const targetOrder = orders.find(o => o.id === orderId);
     
     if (targetOrder?.status === 'Partial Return') {
@@ -1629,7 +1610,6 @@ const handleDeleteVoucher = async (orderId) => {
         {activeTab === 'orders' && (
           <div className="space-y-4">
             
-            {/* Unified Search By Widget for Orders */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
               <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                 <div className="relative">
@@ -1786,7 +1766,7 @@ const handleDeleteVoucher = async (orderId) => {
                             <button onClick={() => { setSelectedOrder(order); setShowVoucherModal(true); }} className="bg-slate-100 hover:bg-slate-200 text-slate-700 p-1.5 rounded text-[11px] font-semibold inline-flex items-center space-x-1">
                               <Printer className="w-3.5 h-3.5" /><span>Voucher</span>
                             </button>
-                            {currentUser.role === 'Admin' && order.cancelled && !isCodDone && (
+                            {currentUser.role === 'Admin' && order.cancelled && order.status !== 'Partial Return' && !isCodDone && (
                               <button onClick={() => handleDeleteVoucher(order.id)} className="bg-rose-50 hover:bg-rose-100 text-rose-700 p-1.5 rounded text-[11px] font-semibold inline-flex items-center space-x-1">
                                 <Trash2 className="w-3.5 h-3.5" /><span>Delete</span>
                               </button>
@@ -1806,7 +1786,6 @@ const handleDeleteVoucher = async (orderId) => {
         {activeTab === 'inventory' && (
           <div className="space-y-4">
             
-            {/* Unified Search By Widget for Inventory */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
               <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                 <div className="relative">
@@ -1991,7 +1970,6 @@ const handleDeleteVoucher = async (orderId) => {
         {activeTab === 'returns' && (
           <div className="space-y-4">
             
-            {/* Unified Search By Widget for Returns */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
               <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                 <div className="relative">
@@ -2089,6 +2067,7 @@ const handleDeleteVoucher = async (orderId) => {
                     const isSelected = selectedReturnIds.includes(ret.id);
                     const todayDateStr = new Date().toLocaleDateString();
                     const isTodayReturn = ret.date === todayDateStr;
+                    const isCodDone = ret.orderId ? codCollectedVoucherIds.has(ret.orderId) : false;
 
                     return (
                       <tr key={ret.id} className="hover:bg-slate-50">
@@ -2105,7 +2084,7 @@ const handleDeleteVoucher = async (orderId) => {
                         <td className="p-3 font-medium text-slate-700">{ret.status}</td>
                         <td className="p-3 text-slate-400 font-mono text-[11px]">{ret.date}</td>
                         <td className="p-3 text-right space-x-2">
-                          {isTodayReturn ? (
+                          {isTodayReturn && !isCodDone ? (
                             <>
                               <button 
                                 onClick={() => {
@@ -2125,7 +2104,9 @@ const handleDeleteVoucher = async (orderId) => {
                               </button>
                             </>
                           ) : (
-                            <span className="text-[10px] text-slate-400">Locked (Past Date)</span>
+                            <span className="text-[10px] text-slate-400 font-medium">
+                              {isCodDone ? '🔒 Locked (COD Settled)' : 'Locked (Past Date)'}
+                            </span>
                           )}
                         </td>
                       </tr>
@@ -2136,60 +2117,6 @@ const handleDeleteVoucher = async (orderId) => {
             </div>
           </div>
         )}
-const handleCancelReturnItem = async (ret) => {
-    // ဤ Return ၏ Order မှာ COD ရှင်းပြီးသား ဖြစ်နေပါက လုံးဝ (လုံးဝ) Cancel ခွင့်မပြုပါ
-    if (ret.orderId && codCollectedVoucherIds.has(ret.orderId)) {
-      alert('ဤ Return နှင့် သက်ဆိုင်သော Voucher မှာ ငွေစာရင်း (COD Flow) ရှင်းလင်းပြီးဖြစ်သဖြင့် Cancel လုပ်၍မရတော့ပါ။');
-      return;
-    }
-
-    if (confirm(`Return record ${ret.id} ကို Cancel လုပ်မည် သေချာပါသလား?`)) {
-      // ... (ကျန်သည့် cancel logic များ ဆက်သွားမည်) ...
-    }
-  };
-
-{/* Returns Table mapping အထဲတွင် */}
-{scopedReturns.map(ret => {
-  const isSelected = selectedReturnIds.includes(ret.id);
-  const todayDateStr = new Date().toLocaleDateString();
-  const isTodayReturn = ret.date === todayDateStr;
-  
-  // ဤ Return နှင့် သက်ဆိုင်သော Order တွင် COD အဝင်စာရင်း ပြီးစီးသွားပြီလား စစ်ဆေးခြင်း
-  const isCodDone = ret.orderId ? codCollectedVoucherIds.has(ret.orderId) : false;
-
-  return (
-    <tr key={ret.id} className="hover:bg-slate-50">
-      {/* ... (Other table cells) ... */}
-      <td className="p-3 text-right space-x-2">
-        {isTodayReturn && !isCodDone ? (
-          <>
-            <button 
-              onClick={() => {
-                setEditingReturnItem(ret);
-                setEditReturnForm({ itemName: ret.itemName, qty: ret.qty, reason: ret.reason });
-                setShowEditReturnModal(true);
-              }}
-              className="text-xs text-indigo-600 hover:underline font-semibold"
-            >
-              Edit
-            </button>
-            <button 
-              onClick={() => handleCancelReturnItem(ret)}
-              className="text-xs text-rose-600 hover:underline font-semibold"
-            >
-              Cancel
-            </button>
-          </>
-        ) : (
-          <span className="text-[10px] text-slate-400 font-medium">
-            {isCodDone ? '🔒 Locked (COD Settled)' : 'Locked (Past Date)'}
-          </span>
-        )}
-      </td>
-    </tr>
-  );
-})}
-
 
         {/* Vendors Tab */}
         {activeTab === 'settlements' && currentUser.role !== 'Vendor' && (
@@ -2208,11 +2135,6 @@ const handleCancelReturnItem = async (ret) => {
                   <Plus className="w-4 h-4 mr-1" /><span>Register New Vendor</span>
                 </button>
               )}
-{currentUser.role === 'Admin' && order.cancelled && order.status !== 'Partial Return' && !isCodDone && (
-  <button onClick={() => handleDeleteVoucher(order.id)} className="bg-rose-50 hover:bg-rose-100 text-rose-700 p-1.5 rounded text-[11px] font-semibold inline-flex items-center space-x-1">
-    <Trash2 className="w-3.5 h-3.5" /><span>Delete</span>
-  </button>
-)} 
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2349,7 +2271,6 @@ const handleCancelReturnItem = async (ret) => {
         {activeTab === 'cash_ledger' && currentUser.role !== 'Vendor' && (
           <div className="space-y-4">
             
-            {/* Unified Search By Widget for Cash Management */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
               <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                 <div className="relative">
@@ -3371,8 +3292,6 @@ const handleCancelReturnItem = async (ret) => {
 
     {showVoucherModal && selectedOrder && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:p-0 print:bg-white">
-          
-          {/* Print Styling CSS to hide everything except voucher */}
           <style>{`
             @media print {
               body * {
