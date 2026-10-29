@@ -921,7 +921,7 @@ export default function App() {
     setShowOrderModal(false);
   };
 
-  const handleUpdateOrderStatus = async (orderId, newStatus, newTracking) => {
+ const handleUpdateOrderStatus = async (orderId, newStatus, newTracking) => {
     const targetOrder = orders.find(o => o.id === orderId);
     if (!targetOrder) return;
     
@@ -955,10 +955,12 @@ export default function App() {
       return;
     }
 
-    const wasCancelledOrReturned = targetOrder.cancelled || targetOrder.status === 'Delivery Return' || targetOrder.status === 'Partial Return';
+    const wasCancelled = targetOrder.cancelled && targetOrder.status === 'Cancelled';
+    const wasDeliveryReturn = targetOrder.status === 'Delivery Return';
     const isNowActive = newStatus === 'Pending' || newStatus === 'In-Transit' || newStatus === 'Delivered';
 
-    if (wasCancelledOrReturned && isNowActive) {
+    // 💡 1. Cancelled ဖြစ်ထားခဲ့သော Voucher ကို ပြန်ဖွင့်ပါက မူလ Stock မှ ပြန်နှုတ်ခြင်း
+    if (wasCancelled && isNowActive) {
       for (const ordItem of targetOrder.items) {
         const stockItem = items.find(i => i.id === ordItem.itemId);
         if (stockItem) {
@@ -970,23 +972,38 @@ export default function App() {
           }));
         }
       }
+      addLog(`Restored Cancelled Order ${orderId} to '${newStatus}': Deducted stock from original Inventory.`);
+    }
 
+    // 💡 2. Delivery Return ဖြစ်ထားခဲ့သော Voucher ကို အခြား Status သို့ ပြန်ပြောင်းပါက 
+    // မူလ In-stock ကို မနှုတ်ဘဲ Delivery Return တုန်းက ထုတ်ခဲ့သော -RET Return Batch ကိုသာ Inventory မှ ဖယ်ရှားခြင်း
+    if (wasDeliveryReturn && isNowActive) {
+      setItems(prev => prev.filter(i => {
+        const matchesOriginal = targetOrder.items.some(oi => {
+          const mainItem = items.find(x => x.id === oi.itemId);
+          return mainItem && i.sku === `${mainItem.sku}-RET`;
+        });
+        return !matchesOriginal;
+      }));
+
+      // သက်ဆိုင်ရာ Return Record ကိုလည်း ရှင်းလင်းခြင်း
       setReturns(prev => prev.filter(r => r.orderId !== orderId));
-      addLog(`Restored Order ${orderId} status to '${newStatus}': Deducted stock from Inventory and cleared related return records.`);
+      addLog(`Restored Delivery Return Order ${orderId} to '${newStatus}': Cleared Return Batch (-RET) from Inventory without affecting main stock.`);
     }
 
     const isDelivered = newStatus === 'Delivered';
     const isCancelled = newStatus === 'Cancelled';
     const isDeliveryReturn = newStatus === 'Delivery Return';
 
-    if (isCancelled && !targetOrder.cancelled) {
+    // Cancelled ဖြစ်သွားပါက မူလ Stock ပြန်ပေါင်းခြင်း
+    if (isCancelled && targetOrder.status !== 'Cancelled') {
       for (const ordItem of targetOrder.items) {
         const stockItem = items.find(i => i.id === ordItem.itemId);
         if (stockItem) {
           setItems(prev => prev.map(i => i.id === stockItem.id ? { ...i, quantity: (Number(i.quantity) || 0) + (Number(ordItem.qty) || 0) } : i));
         }
       }
-      addLog(`Cancelled Order ${orderId}: Restored stock quantities back to Inventory.`);
+      addLog(`Cancelled Order ${orderId}: Restored stock quantities back to main Inventory.`);
     }
 
     const updatedItems = targetOrder.items.map(it => ({
@@ -1012,6 +1029,7 @@ export default function App() {
       });
     } catch (e) {}
 
+    // Delivery Return ဖြစ်လာပါက Return Batch အသစ်ထည့်ခြင်း
     if (isDeliveryReturn && targetOrder.status !== 'Delivery Return') {
       for (const ordItem of targetOrder.items) {
         const stockItem = items.find(i => i.id === ordItem.itemId);
