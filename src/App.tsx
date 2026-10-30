@@ -811,10 +811,13 @@ export default function App() {
         const originalStockItem = items.find(x => x.sku === baseSku);
 
         if (originalStockItem) {
-          const hasVendorReturn = returns.some(r => 
-            r.type === 'Vendor Return (Manual)' && 
-            r.itemId === originalStockItem.id
-          );
+          const hasVendorReturn = returns.some(r => {
+            if (r.type !== 'Vendor Return (Manual)') return false;
+            if (r.itemId === originalStockItem.id) return true;
+            const matchedIt = items.find(x => x.id === r.itemId);
+            if (matchedIt && (matchedIt.sku === baseSku || matchedIt.sku === `${baseSku}-PRET`)) return true;
+            return false;
+          });
 
           if (hasVendorReturn) {
             alert('ဤ Partial Return ပစ္စည်းသည် Vendor ထံသို့ Manual Return ပြုလုပ်ပြီးသွားပြီဖြစ်သဖြင့် Cancel (ဖျက်သိမ်း) လုပ်၍ မရတော့ပါ။');
@@ -887,12 +890,20 @@ export default function App() {
       return;
     }
 
-    // 💡 2. Partial Return ဖြစ်နေပါက အဆိုပါ Item ကို Vendor ထံသို့ Manual Return လုပ်ထားပြီးဖြစ်မဖြစ် စစ်ဆေးမည်
+   // 💡 2. Partial Return ဖြစ်နေပါက အဆိုပါ Item ကို Vendor ထံသို့ Manual Return လုပ်ထားပြီးဖြစ်မဖြစ် တိကျစွာ စစ်ဆေးမည်
     if (ret.type === 'Partial Return') {
-      const hasVendorReturn = returns.some(r => 
-        r.type === 'Vendor Return (Manual)' && 
-        r.itemId === ret.itemId
-      );
+      const baseStockItem = items.find(x => x.id === ret.itemId);
+      const targetSku = baseStockItem ? baseStockItem.sku : '';
+      
+      const hasVendorReturn = returns.some(r => {
+        if (r.type !== 'Vendor Return (Manual)') return false;
+        if (r.itemId === ret.itemId) return true;
+        if (targetSku) {
+          const matchedIt = items.find(x => x.id === r.itemId);
+          if (matchedIt && (matchedIt.sku === targetSku || matchedIt.sku === `${targetSku}-PRET`)) return true;
+        }
+        return false;
+      });
 
       if (hasVendorReturn) {
         alert('ဤ Partial Return ပစ္စည်းသည် Vendor ထံသို့ Manual Return ပြုလုပ်ပြီးသွားပြီဖြစ်သဖြင့် Cancel (ဖျက်သိမ်း) လုပ်၍ မရတော့ပါ။');
