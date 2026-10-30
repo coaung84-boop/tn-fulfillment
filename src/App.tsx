@@ -3206,16 +3206,93 @@ export default function App() {
                 </div>
               </div>
 
+             {/* Select Item Stock Section */}
               <div className="border-t pt-3 space-y-2">
-                <label className="block font-semibold text-slate-700">Select Item Stock</label>
+                <div className="flex justify-between items-center">
+                  <label className="block font-semibold text-slate-700">Select Item Stock *</label>
+                  {/* 💡 Item ၁ မျိုးမက ထည့်ရန် ခလုတ် */}
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      setNewOrder({
+                        ...newOrder,
+                        items: [...newOrder.items, { itemId: '', qty: 1, discount: 0 }]
+                      });
+                    }}
+                    className="text-indigo-600 hover:text-indigo-800 text-xs font-bold flex items-center space-x-1"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>+ Add Item</span>
+                  </button>
+                </div>
+
                 {newOrder.items.map((it, idx) => (
-                  <div key={idx} className="grid grid-cols-3 gap-2 bg-slate-50 p-2 rounded-lg">
-                    <select required value={it.itemId} onChange={(e) => { const updated = [...newOrder.items]; updated[idx].itemId = e.target.value; setNewOrder({ ...newOrder, items: updated }); }} className="border border-slate-300 rounded p-1.5 col-span-1">
-                      <option value="">-- Select Item --</option>
-                      {items.filter(i => !newOrder.vendorId || i.vendorId === newOrder.vendorId).map(i => (<option key={i.id} value={i.id}>{i.name} ({i.quantity} left)</option>))}
+                  <div key={idx} className="grid grid-cols-12 gap-1.5 bg-slate-50 p-2 rounded-lg items-center">
+                    {/* Item Select Dropdown */}
+                    <select 
+                      required 
+                      value={it.itemId} 
+                      onChange={(e) => { 
+                        const updated = [...newOrder.items]; 
+                        updated[idx].itemId = e.target.value; 
+                        setNewOrder({ ...newOrder, items: updated }); 
+                      }} 
+                      className="border border-slate-300 rounded p-1.5 text-xs col-span-5 bg-white font-medium"
+                    >
+                      <option value="">-- Choose Item --</option>
+                      {items
+                        .filter(i => !newOrder.vendorId || i.vendorId === newOrder.vendorId)
+                        .map(i => (
+                          <option key={i.id} value={i.id}>
+                            {i.name} ({i.quantity} left)
+                          </option>
+                        ))}
                     </select>
-                    <input type="number" placeholder="Qty" min="1" required value={it.qty} onChange={(e) => { const updated = [...newOrder.items]; updated[idx].qty = Number(e.target.value); setNewOrder({ ...newOrder, items: updated }); }} className="border border-slate-300 rounded p-1.5" />
-                    <input type="number" placeholder="Discount (Ks)" value={it.discount} onChange={(e) => { const updated = [...newOrder.items]; updated[idx].discount = Number(e.target.value); setNewOrder({ ...newOrder, items: updated }); }} className="border border-slate-300 rounded p-1.5" />
+
+                    {/* Qty Input */}
+                    <input 
+                      type="number" 
+                      placeholder="Qty" 
+                      min="1" 
+                      required 
+                      value={it.qty} 
+                      onChange={(e) => { 
+                        const updated = [...newOrder.items]; 
+                        updated[idx].qty = Number(e.target.value); 
+                        setNewOrder({ ...newOrder, items: updated }); 
+                      }} 
+                      className="border border-slate-300 rounded p-1.5 text-xs col-span-3 text-center" 
+                    />
+
+                    {/* Discount Input */}
+                    <input 
+                      type="number" 
+                      placeholder="Disc (Ks)" 
+                      value={it.discount} 
+                      onChange={(e) => { 
+                        const updated = [...newOrder.items]; 
+                        updated[idx].discount = Number(e.target.value); 
+                        setNewOrder({ ...newOrder, items: updated }); 
+                      }} 
+                      className="border border-slate-300 rounded p-1.5 text-xs col-span-3 text-center" 
+                    />
+
+                    {/* 💡 Item 1 ခုထက်ပိုပါက ပြန်ဖျက်နိုင်သည့် Trash Icon */}
+                    <div className="col-span-1 text-center">
+                      {newOrder.items.length > 1 && (
+                        <button 
+                          type="button" 
+                          onClick={() => {
+                            const updated = newOrder.items.filter((_, i) => i !== idx);
+                            setNewOrder({ ...newOrder, items: updated });
+                          }}
+                          className="text-rose-500 hover:text-rose-700 p-1"
+                          title="Remove Item"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
