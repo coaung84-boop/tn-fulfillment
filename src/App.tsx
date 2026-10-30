@@ -749,26 +749,81 @@ export default function App() {
   const handleCancelInventoryItem = async (item) => {
     if (confirm(`သတိပေးချက်: Stock item "${item.name}" ကို Cancel လုပ်၍ စာရင်းမှ ဖျက်ပစ်မည် သေချာပါသလား?`)) {
       
-      // 💡 ဤ Item သည် Return Batch (`-RET` သို့မဟုတ် `-PRET`) ဟုတ်မဟုတ် စစ်ဆေးခြင်း
-      const isReturnBatch = item.sku && (item.sku.includes('-RET') || item.sku.includes('-PRET'));
+      const isDeliveryRet = item.sku && item.sku.endsWith('-RET');
+      const isPartialRet = item.sku && item.sku.endsWith('-PRET');
 
-      if (isReturnBatch) {
-        // 1. ဤ Return Batch နှင့် သက်ဆိုင်သော Return Record ကို ရှာပြီး ဖြုတ်မည်
-        const targetReturn = returns.find(r => r.itemId === item.id || (item.sku.includes('-RET') && r.type === 'Delivery Return'));
-        
+      // 💡 1. Delivery Return Batch ဖြစ်နေလျှင်
+      if (isDeliveryRet) {
+        const targetReturn = returns.find(r => {
+          const ord = orders.find(o => o.id === r.orderId);
+          if (!ord) return false;
+          return ord.items.some(oi => {
+            const mainIt = items.find(x => x.id === oi.itemId);
+            return mainIt && item.sku === `${mainIt.sku}-RET`;
+          });
+        });
+
         if (targetReturn && targetReturn.orderId) {
           const targetOrder = orders.find(o => o.id === targetReturn.orderId);
-          
           if (targetOrder) {
-            if (targetOrder.status === 'Delivery Return') {
-              // Order status ကို Delivered သို့ ပြန်ပြောင်းမည်
+            const updatedOrder = {
+              ...targetOrder,
+              status: 'Delivered',
+              cancelled: false,
+              codCollected: true,
+              updatedBy: currentUser?.name || 'Staff'
+            };
+            try {
+              await fetch(`${API_BASE_URL}/api/orders/${targetOrder.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updatedOrder)
+              });
+            } catch (e) {}
+            setOrders(prev => prev.map(o => o.id === targetOrder.id ? updatedOrder : o));
+          }
+          try {
+            await fetch(`${API_BASE_URL}/api/returns/${targetReturn.id}`, { method: 'DELETE' });
+          } catch (e) {}
+          setReturns(prev => prev.filter(r => r.id !== targetReturn.id));
+        }
+      } 
+      // 💡 2. Partial Return Batch ဖြစ်နေလျှင်
+      else if (isPartialRet) {
+        const baseSku = item.sku.replace('-PRET', '');
+        const originalStockItem = items.find(x => x.sku === baseSku);
+        
+        if (originalStockItem) {
+          const targetReturn = returns.find(r => r.itemId === originalStockItem.id && r.type === 'Partial Return');
+          if (targetReturn && targetReturn.orderId) {
+            const targetOrder = orders.find(o => o.id === targetReturn.orderId);
+            if (targetOrder) {
+              let newItemTotal = 0;
+              const restoredOrderItems = targetOrder.items.map(it => {
+                if (it.itemId === originalStockItem.id) {
+                  const restoredQty = it.qty + targetReturn.qty;
+                  newItemTotal += ((Number(it.price) || 0) - (Number(it.discount) || 0)) * restoredQty;
+                  return { ...it, qty: restoredQty };
+                } else {
+                  newItemTotal += ((Number(it.price) || 0) - (Number(it.discount) || 0)) * it.qty;
+                  return it;
+                }
+              });
+
+              const newTotalCod = newItemTotal + (Number(targetOrder.deliveryFee) || 0);
+              const remainingReturns = returns.filter(r => r.orderId === targetOrder.id && r.id !== targetReturn.id);
+              const newStatus = remainingReturns.length === 0 ? 'Delivered' : 'Partial Return';
+
               const updatedOrder = {
                 ...targetOrder,
-                status: 'Delivered',
-                cancelled: false,
+                status: newStatus,
+                items: restoredOrderItems,
+                itemTotal: newItemTotal,
+                totalCod: newTotalCod,
                 codCollected: true,
                 updatedBy: currentUser?.name || 'Staff'
               };
+
               try {
                 await fetch(`${API_BASE_URL}/api/orders/${targetOrder.id}`, {
                   method: 'PUT',
@@ -778,23 +833,22 @@ export default function App() {
               } catch (e) {}
               setOrders(prev => prev.map(o => o.id === targetOrder.id ? updatedOrder : o));
             }
+
+            try {
+              await fetch(`${API_BASE_URL}/api/returns/${targetReturn.id}`, { method: 'DELETE' });
+            } catch (e) {}
+            setReturns(prev => prev.filter(r => r.id !== targetReturn.id));
           }
-          
-          // Return & Damage စာရင်းမှ ဖယ်ရှားမည်
-          try {
-            await fetch(`${API_BASE_URL}/api/returns/${targetReturn.id}`, { method: 'DELETE' });
-          } catch (e) {}
-          setReturns(prev => prev.filter(r => r.id !== targetReturn.id));
         }
       }
 
-      // 2. Inventory မှ အဆိုပါ Item ကို ဖျက်မည်
+      // 3. Inventory မှ အဆိုပါ Batch Item ကို ဖျက်မည်
       try {
         await fetch(`${API_BASE_URL}/api/inventory/${item.id}`, { method: 'DELETE' });
       } catch (e) {}
       
-      setItems(items.filter(i => i.id !== item.id));
-      addLog(`Cancelled and removed inventory item ${item.name} (SKU: ${item.sku}) and synced related return/order records.`);
+      setItems(prev => prev.filter(i => i.id !== item.id));
+      addLog(`Cancelled and removed inventory return batch ${item.name} (SKU: ${item.sku}) and synced related return/order records.`);
     }
   };
 
