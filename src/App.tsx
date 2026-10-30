@@ -809,8 +809,19 @@ export default function App() {
       else if (isPartialRet) {
         const baseSku = item.sku.replace('-PRET', '');
         const originalStockItem = items.find(x => x.sku === baseSku);
-        
+
         if (originalStockItem) {
+          const hasVendorReturn = returns.some(r => 
+            r.type === 'Vendor Return (Manual)' && 
+            r.itemId === originalStockItem.id
+          );
+
+          if (hasVendorReturn) {
+            alert('ဤ Partial Return ပစ္စည်းသည် Vendor ထံသို့ Manual Return ပြုလုပ်ပြီးသွားပြီဖြစ်သဖြင့် Cancel (ဖျက်သိမ်း) လုပ်၍ မရတော့ပါ။');
+            return;
+          }
+
+          // Vendor Return မရှိသေးပါက မူလအတိုင်း Order နှင့် Return စာရင်းများကို ရှင်းလင်းပေးမည်
           const targetReturn = returns.find(r => r.itemId === originalStockItem.id && r.type === 'Partial Return');
           if (targetReturn && targetReturn.orderId) {
             const targetOrder = orders.find(o => o.id === targetReturn.orderId);
@@ -876,14 +887,27 @@ export default function App() {
       return;
     }
 
-    // 💡 2. သက်ဆိုင်ရာ Order ၏ Status မှာ Delivered ဖြစ်သွားပြီဆိုလျှင် Return ကို Cancel လုပ်ခွင့်မပြုပါ
+    // 💡 2. Partial Return ဖြစ်နေပါက အဆိုပါ Item ကို Vendor ထံသို့ Manual Return လုပ်ထားပြီးဖြစ်မဖြစ် စစ်ဆေးမည်
+    if (ret.type === 'Partial Return') {
+      const hasVendorReturn = returns.some(r => 
+        r.type === 'Vendor Return (Manual)' && 
+        r.itemId === ret.itemId
+      );
+
+      if (hasVendorReturn) {
+        alert('ဤ Partial Return ပစ္စည်းသည် Vendor ထံသို့ Manual Return ပြုလုပ်ပြီးသွားပြီဖြစ်သဖြင့် Cancel (ဖျက်သိမ်း) လုပ်၍ မရတော့ပါ။');
+        return;
+      }
+    }
+
+    // 3. သက်ဆိုင်ရာ Order ၏ Status မှာ Delivered ဖြစ်သွားပြီဆိုလျှင် Return ကို Cancel လုပ်ခွင့်မပြုပါ
     const targetOrder = orders.find(o => o.id === ret.orderId);
     if (targetOrder && targetOrder.status === 'Delivered') {
       alert('ဤအော်ဒါ၏ Status မှာ Delivered ဖြစ်သွားပြီဖြစ်သဖြင့် Return ကို Cancel လုပ်၍မရတော့ပါ။');
       return;
     }
 
-    if (confirm(`Return record ${ret.id} ကို Cancel လုပ်မည် သေချာပါသလား?`)) {
+     if (confirm(`Return record ${ret.id} ကို Cancel လုပ်မည် သေချာပါသလား?`)) {
       try {
         await fetch(`${API_BASE_URL}/api/returns/${ret.id}`, { method: 'DELETE' });
       } catch (e) {}
