@@ -747,12 +747,54 @@ export default function App() {
   };
 
   const handleCancelInventoryItem = async (item) => {
-    if (confirm(`သတိပေးချက်: Stock item "${item.name}" ကို Cancel လုပ်၍ စာရင်းမှ ဖျက်ပစ်ပြီး သက်ဆိုင်ရာ လက်ကျန်ဒေတာများကို Update လုပ်မည် သေချာပါသလား?`)) {
+    if (confirm(`သတိပေးချက်: Stock item "${item.name}" ကို Cancel လုပ်၍ စာရင်းမှ ဖျက်ပစ်မည် သေချာပါသလား?`)) {
+      
+      // 💡 ဤ Item သည် Return Batch (`-RET` သို့မဟုတ် `-PRET`) ဟုတ်မဟုတ် စစ်ဆေးခြင်း
+      const isReturnBatch = item.sku && (item.sku.includes('-RET') || item.sku.includes('-PRET'));
+
+      if (isReturnBatch) {
+        // 1. ဤ Return Batch နှင့် သက်ဆိုင်သော Return Record ကို ရှာပြီး ဖြုတ်မည်
+        const targetReturn = returns.find(r => r.itemId === item.id || (item.sku.includes('-RET') && r.type === 'Delivery Return'));
+        
+        if (targetReturn && targetReturn.orderId) {
+          const targetOrder = orders.find(o => o.id === targetReturn.orderId);
+          
+          if (targetOrder) {
+            if (targetOrder.status === 'Delivery Return') {
+              // Order status ကို Delivered သို့ ပြန်ပြောင်းမည်
+              const updatedOrder = {
+                ...targetOrder,
+                status: 'Delivered',
+                cancelled: false,
+                codCollected: true,
+                updatedBy: currentUser?.name || 'Staff'
+              };
+              try {
+                await fetch(`${API_BASE_URL}/api/orders/${targetOrder.id}`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(updatedOrder)
+                });
+              } catch (e) {}
+              setOrders(prev => prev.map(o => o.id === targetOrder.id ? updatedOrder : o));
+            }
+          }
+          
+          // Return & Damage စာရင်းမှ ဖယ်ရှားမည်
+          try {
+            await fetch(`${API_BASE_URL}/api/returns/${targetReturn.id}`, { method: 'DELETE' });
+          } catch (e) {}
+          setReturns(prev => prev.filter(r => r.id !== targetReturn.id));
+        }
+      }
+
+      // 2. Inventory မှ အဆိုပါ Item ကို ဖျက်မည်
       try {
         await fetch(`${API_BASE_URL}/api/inventory/${item.id}`, { method: 'DELETE' });
       } catch (e) {}
+      
       setItems(items.filter(i => i.id !== item.id));
-      addLog(`Cancelled and removed inventory item ${item.name} (SKU: ${item.sku}) and updated related stock data`);
+      addLog(`Cancelled and removed inventory item ${item.name} (SKU: ${item.sku}) and synced related return/order records.`);
     }
   };
 
