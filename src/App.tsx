@@ -2027,7 +2027,7 @@ export default function App() {
               </div>
             </div>
           </div>
-        )}
+
 
         {/* VENDOR INVENTORY TAB */}
         {activeTab === 'inventory' && (
