@@ -2122,8 +2122,8 @@ export default function App() {
                               Return Stock
                             </button>
 
-                            {/* 💡 Today ဖြစ်လျှင် Edit လုပ်ခွင့်ပေးမည် */}
-                            {currentUser.role !== 'Vendor' && isTodayBatch && (
+                            {/* 💡 Normal In-Stock ဖြစ်ပြီး Today Date + Transaction မရှိမှသာ Edit ခလုတ် ပြမည် (-RET/-PRET Batch များတွင် Edit လုံးဝ မပြပါ) */}
+                            {currentUser.role !== 'Vendor' && isTodayBatch && !item.sku?.endsWith('-RET') && !item.sku?.endsWith('-PRET') && (
                               <button 
                                 onClick={() => {
                                   setEditingInventoryItem(item);
@@ -2287,28 +2287,17 @@ export default function App() {
                         <td className="p-3 font-medium text-slate-700">{ret.status}</td>
                         <td className="p-3 text-slate-400 font-mono text-[11px]">{ret.date}</td>
                         <td className="p-3 text-right space-x-2">
+                          {/* 💡 Return Record များသည် History တည်ရှိမှု ဖြစ်သဖြင့် Edit ကို အပြီးတိုင် ပိတ်ထားပြီး Today ဖြစ်ပါက Cancel သာ ပြုလုပ်ခွင့်ပေးမည် */}
                           {isTodayReturn && !isCodDone ? (
-                            <>
-                              <button 
-                                onClick={() => {
-                                  setEditingReturnItem(ret);
-                                  setEditReturnForm({ itemName: ret.itemName, qty: ret.qty, reason: ret.reason });
-                                  setShowEditReturnModal(true);
-                                }}
-                                className="text-xs text-indigo-600 hover:underline font-semibold"
-                              >
-                                Edit
-                              </button>
-                              <button 
-                                onClick={() => handleCancelReturnItem(ret)}
-                                className="text-xs text-rose-600 hover:underline font-semibold"
-                              >
-                                Cancel
-                              </button>
-                            </>
+                            <button 
+                              onClick={() => handleCancelReturnItem(ret)}
+                              className="text-xs text-rose-600 hover:underline font-semibold"
+                            >
+                              Cancel
+                            </button>
                           ) : (
                             <span className="text-[10px] text-slate-400 font-medium">
-                              {isCodDone ? '🔒 Locked (COD Settled)' : 'Locked (Past Date)'}
+                              {isCodDone ? '🔒 Locked (COD Settled)' : '🔒 Locked (Past Date)'}
                             </span>
                           )}
                         </td>
