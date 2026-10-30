@@ -317,7 +317,7 @@ export default function App() {
     if (deliveryFilter !== 'ALL') {
       res = res.filter(o => getDeliveryName(o) === deliveryFilter || o.deliveryServiceId === deliveryFilter);
     }
-    if (orderSearchVal.trim()) {
+    if (orderSearchVal.trim() || orderSearchMode === 'STATUS' || orderSearchMode === 'COD_FLOW' || orderSearchMode === 'VENDOR_PAY') {
       const q = orderSearchVal.toLowerCase();
       if (orderSearchMode === 'ID') {
         res = res.filter(o => o.id.toLowerCase().includes(q) || o.customerName.toLowerCase().includes(q) || o.customerPhone.toLowerCase().includes(q) || o.trackingNo.toLowerCase().includes(q));
@@ -327,10 +327,26 @@ export default function App() {
         res = res.filter(o => o.vendorId === orderSearchVal || (vendors.find(v => v.id === o.vendorId)?.name.toLowerCase().includes(q)));
       } else if (orderSearchMode === 'DELIVERY') {
         res = res.filter(o => getDeliveryName(o).toLowerCase().includes(q));
+      } else if (orderSearchMode === 'STATUS') {
+        if (orderSearchVal) {
+          res = res.filter(o => o.status === orderSearchVal);
+        }
+      } else if (orderSearchMode === 'COD_FLOW') {
+        if (orderSearchVal === 'DONE') {
+          res = res.filter(o => codCollectedVoucherIds.has(o.id));
+        } else if (orderSearchVal === 'PENDING') {
+          res = res.filter(o => !codCollectedVoucherIds.has(o.id));
+        }
+      } else if (orderSearchMode === 'VENDOR_PAY') {
+        if (orderSearchVal === 'DONE') {
+          res = res.filter(o => recordedVoucherIds.has(o.id));
+        } else if (orderSearchVal === 'PENDING') {
+          res = res.filter(o => !recordedVoucherIds.has(o.id));
+        }
       }
     }
     return res;
-  }, [orders, currentUser, deliveryFilter, orderSearchMode, orderSearchVal, vendors, deliveries]);
+  }, [orders, currentUser, deliveryFilter, orderSearchMode, orderSearchVal, vendors, deliveries, codCollectedVoucherIds, recordedVoucherIds]);
 
   const scopedReturns = useMemo(() => {
     let res = returns;
@@ -1811,19 +1827,18 @@ export default function App() {
                   </button>
 
                   {showOrderSearchDropdown && (
-                    <div className="absolute left-0 mt-1 w-44 bg-white border border-slate-200 rounded-lg shadow-xl z-20 text-xs py-1">
-                      {['ID', 'DATE', 'VENDOR', 'DELIVERY'].map(mode => (
+                    <div className="absolute left-0 mt-1 w-48 bg-white border border-slate-200 rounded-lg shadow-xl z-20 text-xs py-1">
+                      {['ID', 'DATE', 'VENDOR', 'DELIVERY', 'STATUS', 'COD_FLOW', 'VENDOR_PAY'].map(mode => (
                         <button
                           key={mode}
                           onClick={() => { setOrderSearchMode(mode); setOrderSearchVal(''); setShowOrderSearchDropdown(false); }}
                           className={`w-full text-left px-3 py-2 hover:bg-indigo-50 font-medium ${orderSearchMode === mode ? 'text-indigo-600 font-bold bg-indigo-50/50' : 'text-slate-700'}`}
                         >
-                          {mode === 'ID' ? 'ID / Customer / Phone' : mode === 'DATE' ? 'Date' : mode === 'VENDOR' ? 'Vendor Name' : 'Delivery Service'}
+                          {mode === 'ID' ? 'ID / Customer / Phone' : mode === 'DATE' ? 'Date' : mode === 'VENDOR' ? 'Vendor Name' : mode === 'DELIVERY' ? 'Delivery Service' : mode === 'STATUS' ? 'Current Status' : mode === 'COD_FLOW' ? 'COD Flow Status' : 'Vendor Pay Status'}
                         </button>
                       ))}
                     </div>
                   )}
-                </div>
 
                 {orderSearchMode === 'ID' && (
                   <div className="relative w-full sm:w-64">
@@ -1864,6 +1879,49 @@ export default function App() {
                   >
                     <option value="">-- Select Delivery --</option>
                     {deliveries.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+                  </select>
+                )}
+
+                {/* 💡 Current Status အလိုက် ရှာရန် */}
+                {orderSearchMode === 'STATUS' && (
+                  <select 
+                    value={orderSearchVal}
+                    onChange={(e) => setOrderSearchVal(e.target.value)}
+                    className="border border-slate-300 rounded-lg text-xs px-3 py-1.5 bg-white font-medium"
+                  >
+                    <option value="">-- All Statuses --</option>
+                    <option value="Pending">Pending</option>
+                    <option value="In-Transit">In-Transit</option>
+                    <option value="Delivered">Delivered</option>
+                    <option value="Partial Return">Partial Return</option>
+                    <option value="Delivery Return">Delivery Return</option>
+                    <option value="Cancelled">Cancelled</option>
+                  </select>
+                )}
+
+                {/* 💡 COD Flow အလိုက် ရှာရန် */}
+                {orderSearchMode === 'COD_FLOW' && (
+                  <select 
+                    value={orderSearchVal}
+                    onChange={(e) => setOrderSearchVal(e.target.value)}
+                    className="border border-slate-300 rounded-lg text-xs px-3 py-1.5 bg-white font-medium"
+                  >
+                    <option value="">-- All COD Flow Status --</option>
+                    <option value="DONE">COD Flow Done (Collected)</option>
+                    <option value="PENDING">COD Flow Pending (Not Collected)</option>
+                  </select>
+                )}
+
+                {/* 💡 Vendor Payout Status အလိုက် ရှာရန် */}
+                {orderSearchMode === 'VENDOR_PAY' && (
+                  <select 
+                    value={orderSearchVal}
+                    onChange={(e) => setOrderSearchVal(e.target.value)}
+                    className="border border-slate-300 rounded-lg text-xs px-3 py-1.5 bg-white font-medium"
+                  >
+                    <option value="">-- All Vendor Pay Status --</option>
+                    <option value="DONE">Vendor Paid Done (Payout Recorded)</option>
+                    <option value="PENDING">Vendor Paid Pending (Not Paid Yet)</option>
                   </select>
                 )}
               </div>
