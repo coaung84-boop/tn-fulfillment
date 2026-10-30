@@ -2046,9 +2046,20 @@ export default function App() {
                       const todayDateStr = new Date().toISOString().split('T')[0];
                       const isTodayBatch = item.stockInDate === todayDateStr;
 
+                      // 💡 1. ဤ Item မှ Transaction (Order/Return) ထွက်ဖူးခြင်း ရှိမရှိ Safe Check ဖြင့် စစ်ဆေးခြင်း
+                      const hasTransactions = (Array.isArray(orders) && orders.some(o => 
+                        !o.cancelled && Array.isArray(o.items) && o.items.some(oi => oi && oi.itemId === item.id)
+                      )) || (Array.isArray(returns) && returns.some(r => r && r.itemId === item.id));
+
                       return (
                         <tr key={item.id} className="hover:bg-slate-50">
-                          <td className="p-3 text-center"><input type="checkbox" checked={isSelected} onChange={(e) => setSelectedItemIds(e.target.checked ? [...selectedItemIds, item.id] : selectedItemIds.filter(id => id !== item.id))} /></td>
+                          <td className="p-3 text-center">
+                            <input 
+                              type="checkbox" 
+                              checked={isSelected} 
+                              onChange={(e) => setSelectedItemIds(e.target.checked ? [...selectedItemIds, item.id] : selectedItemIds.filter(id => id !== item.id))} 
+                            />
+                          </td>
                           <td className="p-3">
                             <p className="font-bold text-slate-800">{item.name}</p>
                             <p className="text-[10px] text-slate-400 font-mono">{item.sku}</p>
