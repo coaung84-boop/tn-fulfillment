@@ -763,14 +763,12 @@ export default function App() {
   };
 
   const handleCancelInventoryItem = async (item) => {
-    // 💡 1. Stock In Date က Today မဟုတ်ပါက Cancel ခွင့်မပြုပါ
     const todayDateStr = new Date().toISOString().split('T')[0];
     if (item.stockInDate !== todayDateStr) {
       alert('ယနေ့ (Today) ထည့်သွင်းထားသော Stock Batch မဟုတ်ပါက Cancel လုပ်ပိုင်ခွင့် မရှိပါ။');
       return;
     }
 
-    // 💡 2. ဤ Item တွင် Transaction ရှိထားပြီးပါက Cancel ခွင့်မပြုပါ
     const hasTransactions = orders.some(o => 
       !o.cancelled && o.items.some(oi => oi.itemId === item.id)
     ) || returns.some(r => r.itemId === item.id);
@@ -785,7 +783,6 @@ export default function App() {
       const isDeliveryRet = item.sku && item.sku.endsWith('-RET');
       const isPartialRet = item.sku && item.sku.endsWith('-PRET');
 
-      // Delivery Return Batch စစ်ဆေးခြင်း
       if (isDeliveryRet) {
         const targetReturn = returns.find(r => {
           const ord = orders.find(o => o.id === r.orderId);
@@ -821,7 +818,6 @@ export default function App() {
           setReturns(prev => prev.filter(r => r.id !== targetReturn.id));
         }
       } 
-      // Partial Return Batch စစ်ဆေးခြင်း
       else if (isPartialRet) {
         const baseSku = item.sku.replace('-PRET', '');
         const originalStockItem = items.find(x => x.sku === baseSku);
@@ -840,7 +836,6 @@ export default function App() {
             return;
           }
 
-          // Vendor Return မရှိသေးပါက မူလအတိုင်း Order နှင့် Return စာရင်းများကို ရှင်းလင်းပေးမည်
           const targetReturn = returns.find(r => r.itemId === originalStockItem.id && r.type === 'Partial Return');
           if (targetReturn && targetReturn.orderId) {
             const targetOrder = orders.find(o => o.id === targetReturn.orderId);
@@ -889,7 +884,6 @@ export default function App() {
         }
       }
 
-      // 3. Inventory မှ အဆိုပါ Item ကို ဖျက်မည်
       try {
         await fetch(`${API_BASE_URL}/api/inventory/${item.id}`, { method: 'DELETE' });
       } catch (e) {}
@@ -900,13 +894,11 @@ export default function App() {
   };
 
   const handleCancelReturnItem = async (ret) => {
-    // 1. COD Flow (ငွေစာရင်းရှင်းလင်းပြီးသား) ဖြစ်လျှင် Cancel ခွင့်မပြုပါ
     if (ret.orderId && codCollectedVoucherIds.has(ret.orderId)) {
       alert('ဤ Return နှင့် သက်ဆိုင်သော Voucher မှာ ငွေစာရင်း (COD Flow) ရှင်းလင်းပြီးဖြစ်သဖြင့် Cancel လုပ်၍မရတော့ပါ။');
       return;
     }
 
-   // 💡 2. Partial Return ဖြစ်နေပါက အဆိုပါ Item ကို Vendor ထံသို့ Manual Return လုပ်ထားပြီးဖြစ်မဖြစ် တိကျစွာ စစ်ဆေးမည်
     if (ret.type === 'Partial Return') {
       const baseStockItem = items.find(x => x.id === ret.itemId);
       const targetSku = baseStockItem ? baseStockItem.sku : '';
@@ -927,7 +919,6 @@ export default function App() {
       }
     }
 
-    // 3. သက်ဆိုင်ရာ Order ၏ Status မှာ Delivered ဖြစ်သွားပြီဆိုလျှင် Return ကို Cancel လုပ်ခွင့်မပြုပါ
     const targetOrder = orders.find(o => o.id === ret.orderId);
     if (targetOrder && targetOrder.status === 'Delivered') {
       alert('ဤအော်ဒါ၏ Status မှာ Delivered ဖြစ်သွားပြီဖြစ်သဖြင့် Return ကို Cancel လုပ်၍မရတော့ပါ။');
@@ -940,7 +931,6 @@ export default function App() {
       } catch (e) {}
 
       if (targetOrder) {
-        // --- A. Delivery Return Cancel လုပ်ခြင်း ---
         if (targetOrder.status === 'Delivery Return') {
           setItems(prev => prev.filter(i => {
             const matchesOriginal = targetOrder.items.some(oi => i.sku === `${items.find(x => x.id === oi.itemId)?.sku}-RET`);
@@ -965,7 +955,6 @@ export default function App() {
 
           setOrders(prev => prev.map(o => o.id === targetOrder.id ? updatedOrder : o));
 
-        // --- B. Partial Return Cancel လုပ်ခြင်း ---
         } else if (targetOrder.status === 'Partial Return') {
           const targetStockItem = items.find(x => x.id === ret.itemId);
           
@@ -1013,7 +1002,6 @@ export default function App() {
           setOrders(prev => prev.map(o => o.id === targetOrder.id ? updatedOrder : o));
         }
       } else {
-        // --- C. Manual Return Cancel လုပ်လျှင် Stock ပြန်ပေါင်းပေးမည် ---
         if (ret.itemId) {
           setItems(prev => prev.map(i => {
             if (i.id === ret.itemId) {
@@ -1100,7 +1088,7 @@ export default function App() {
     setShowOrderModal(false);
   };
 
- const handleUpdateOrderStatus = async (orderId, newStatus, newTracking) => {
+  const handleUpdateOrderStatus = async (orderId, newStatus, newTracking) => {
     const targetOrder = orders.find(o => o.id === orderId);
     if (!targetOrder) return;
     
@@ -1134,7 +1122,6 @@ export default function App() {
       return;
     }
 
-    // 💡 တိကျသော Status အခြေအနေများကို သတ်မှတ်ခြင်း (cancelled flag ကို ရောမသုံးပါ)
     const wasCancelled = targetOrder.status === 'Cancelled';
     const wasDeliveryReturn = targetOrder.status === 'Delivery Return';
 
@@ -1142,7 +1129,6 @@ export default function App() {
     const isCancelled = newStatus === 'Cancelled';
     const isDeliveryReturn = newStatus === 'Delivery Return';
 
-    // 1. Cancelled ဖြစ်နေသော Order ကို အခြား Status သို့ ပြောင်းပါက မူလ Stock ထဲမှ ပြန်နှုတ်ခြင်း
     if (wasCancelled && !isCancelled) {
       for (const ordItem of targetOrder.items) {
         const stockItem = items.find(i => i.id === ordItem.itemId);
@@ -1158,7 +1144,6 @@ export default function App() {
       addLog(`Re-activated Cancelled Order ${orderId} to '${newStatus}': Deducted restored stock back from main Inventory.`);
     }
 
-    // 2. Delivery Return ဖြစ်နေသော Order ကို အခြား Status သို့ ပြောင်းပါက -RET Batch နှင့် Return Record များကို ရှင်းလင်းခြင်း
     if (wasDeliveryReturn && !isDeliveryReturn) {
       setItems(prev => prev.filter(i => {
         const matchesOriginal = targetOrder.items.some(oi => {
@@ -1172,7 +1157,6 @@ export default function App() {
       addLog(`Changed Order ${orderId} from Delivery Return to '${newStatus}': Cleared Return Batch (-RET) and Return Records.`);
     }
 
-    // 3. ယခုမှ Cancelled ဖြစ်သွားပါက မူလ Stock ထဲသို့ ပြန်ပေါင်းပေးခြင်း
     if (isCancelled && !wasCancelled) {
       for (const ordItem of targetOrder.items) {
         const stockItem = items.find(i => i.id === ordItem.itemId);
@@ -1206,7 +1190,6 @@ export default function App() {
       });
     } catch (e) {}
 
-    // 4. ယခုမှ Delivery Return ဖြစ်လာပါက Return Batch နှင့် Return Record အသစ်ထည့်ခြင်း
     if (isDeliveryReturn && !wasDeliveryReturn) {
       for (const ordItem of targetOrder.items) {
         const stockItem = items.find(i => i.id === ordItem.itemId);
@@ -1839,6 +1822,7 @@ export default function App() {
                       ))}
                     </div>
                   )}
+                </div>
 
                 {orderSearchMode === 'ID' && (
                   <div className="relative w-full sm:w-64">
@@ -1882,7 +1866,6 @@ export default function App() {
                   </select>
                 )}
 
-                {/* 💡 Current Status အလိုက် ရှာရန် */}
                 {orderSearchMode === 'STATUS' && (
                   <select 
                     value={orderSearchVal}
@@ -1899,7 +1882,6 @@ export default function App() {
                   </select>
                 )}
 
-                {/* 💡 COD Flow အလိုက် ရှာရန် */}
                 {orderSearchMode === 'COD_FLOW' && (
                   <select 
                     value={orderSearchVal}
@@ -1912,7 +1894,6 @@ export default function App() {
                   </select>
                 )}
 
-                {/* 💡 Vendor Payout Status အလိုက် ရှာရန် */}
                 {orderSearchMode === 'VENDOR_PAY' && (
                   <select 
                     value={orderSearchVal}
@@ -2027,7 +2008,7 @@ export default function App() {
               </div>
             </div>
           </div>
-
+        )}
 
         {/* VENDOR INVENTORY TAB */}
         {activeTab === 'inventory' && (
@@ -2139,7 +2120,6 @@ export default function App() {
                       const todayDateStr = new Date().toISOString().split('T')[0];
                       const isTodayBatch = item.stockInDate === todayDateStr;
 
-                      // 💡 1. ဤ Item မှ Transaction (Order/Return) ထွက်ဖူးခြင်း ရှိမရှိ Safe Check ဖြင့် စစ်ဆေးခြင်း
                       const hasTransactions = (Array.isArray(orders) && orders.some(o => 
                         !o.cancelled && Array.isArray(o.items) && o.items.some(oi => oi && oi.itemId === item.id)
                       )) || (Array.isArray(returns) && returns.some(r => r && r.itemId === item.id));
@@ -2180,7 +2160,6 @@ export default function App() {
                               Return Stock
                             </button>
 
-                            {/* 💡 Normal In-Stock ဖြစ်ပြီး Today Date + Transaction မရှိမှသာ Edit ခလုတ် ပြမည် (-RET/-PRET Batch များတွင် Edit လုံးဝ မပြပါ) */}
                             {currentUser.role !== 'Vendor' && isTodayBatch && !item.sku?.endsWith('-RET') && !item.sku?.endsWith('-PRET') && (
                               <button 
                                 onClick={() => {
@@ -2202,7 +2181,6 @@ export default function App() {
                               </button>
                             )}
 
-                            {/* 💡 Today ဖြစ်ပြီး Transaction မရှိသေးမှသာ Cancel ခွင့်ပြုမည် */}
                             {currentUser.role !== 'Vendor' && isTodayBatch && !hasTransactions && (
                               <button 
                                 onClick={() => handleCancelInventoryItem(item)}
@@ -2212,7 +2190,6 @@ export default function App() {
                               </button>
                             )}
 
-                            {/* 💡 Today မဟုတ်ပါက (Past Date) လုံးဝ Lock ခတ်မည် */}
                             {currentUser.role !== 'Vendor' && !isTodayBatch && (
                               <span className="text-[10px] text-slate-400">🔒 Locked (Past Date)</span>
                             )}
@@ -2345,7 +2322,6 @@ export default function App() {
                         <td className="p-3 font-medium text-slate-700">{ret.status}</td>
                         <td className="p-3 text-slate-400 font-mono text-[11px]">{ret.date}</td>
                         <td className="p-3 text-right space-x-2">
-                          {/* 💡 Return Record များသည် History တည်ရှိမှု ဖြစ်သဖြင့် Edit ကို အပြီးတိုင် ပိတ်ထားပြီး Today ဖြစ်ပါက Cancel သာ ပြုလုပ်ခွင့်ပေးမည် */}
                           {isTodayReturn && !isCodDone ? (
                             <button 
                               onClick={() => handleCancelReturnItem(ret)}
@@ -3540,7 +3516,7 @@ export default function App() {
         </div>
       )}
 
-    {showVoucherModal && selectedOrder && (
+      {showVoucherModal && selectedOrder && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:p-0 print:bg-white">
           <style>{`
             @media print {
