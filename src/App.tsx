@@ -3310,6 +3310,7 @@ export default function App() {
                     </div>
                   );
                 })}
+              </div>
 
               <div className="pt-3 flex space-x-2">
                 <button type="button" onClick={() => setShowOrderModal(false)} className="w-1/2 bg-slate-100 text-slate-700 py-2.5 rounded-lg font-semibold">Cancel</button>
