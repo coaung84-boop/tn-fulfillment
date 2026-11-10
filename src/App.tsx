@@ -955,9 +955,10 @@ export default function App() {
 
           setOrders(prev => prev.map(o => o.id === targetOrder.id ? updatedOrder : o));
 
-        } else if (targetOrder.status === 'Partial Return') {
+      } else if (targetOrder.status === 'Partial Return') {
           const targetStockItem = items.find(x => x.id === ret.itemId);
           
+          // Warehouse ထဲက -PRET batch ကို ပြန်ဖြုတ်သည်
           setItems(prev => prev.filter(i => {
             if (targetStockItem && i.sku === `${targetStockItem.sku}-PRET`) {
               return false;
@@ -966,9 +967,14 @@ export default function App() {
           }));
 
           let newItemTotal = 0;
+          let itemExistsInOrder = false;
+
           const restoredOrderItems = targetOrder.items.map(it => {
             if (it.itemId === ret.itemId) {
-              const restoredQty = it.qty + ret.qty;
+              itemExistsInOrder = true;
+              // မူလ order ထဲမှာ ကျန်နေတဲ့ qty နဲ့ ret.qty ကို ပေါင်းမယ့်အစား 
+              // တကယ်တမ်း ပစ္စည်းအစစ် မူလအရေအတွက် (သို့မဟုတ်) ret.qty အတိုင်း တခါတည်း ပြန်သတ်မှတ်ပေးပါ (သို့မဟုတ် အမှန်တကယ် ပေါင်းသင့်သည်များကို စစ်ပါ)
+              const restoredQty = it.qty + ret.qty; // သို့မဟုတ် မူလ စုစုပေါင်း Qty ကို တိုက်ရိုက်သုံးပါ
               newItemTotal += ((Number(it.price) || 0) - (Number(it.discount) || 0)) * restoredQty;
               return { ...it, qty: restoredQty };
             } else {
@@ -976,6 +982,23 @@ export default function App() {
               return it;
             }
           });
+
+          // အကယ်၍ ပစ္စည်း ၃ ခုလုံး Return လုပ်ထားလို့ Order ထဲမှာ လုံးဝမရှိတော့ဘူးဆိုရင် (restoredOrderItems ထဲ မပါလာရင်) အသစ်ပြန်ထည့်ပေးရန်
+          if (!itemExistsInOrder) {
+            const stockItemRef = items.find(x => x.id === ret.itemId);
+            if (stockItemRef) {
+              const linePrice = Number(stockItemRef.price) || 0;
+              restoredOrderItems.push({
+                itemId: ret.itemId,
+                name: stockItemRef.name,
+                qty: ret.qty,
+                price: linePrice,
+                discount: 0,
+                status: 'Delivered'
+              });
+              newItemTotal += linePrice * ret.qty;
+            }
+          }
 
           const newTotalCod = newItemTotal + (Number(targetOrder.deliveryFee) || 0);
           const remainingReturns = returns.filter(r => r.orderId === targetOrder.id && r.id !== ret.id);
