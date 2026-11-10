@@ -2183,7 +2183,7 @@ export default function App() {
                               Return Stock
                             </button>
 
-                            {currentUser.role !== 'Vendor' && isTodayBatch && !item.sku?.endsWith('-RET') && !item.sku?.endsWith('-PRET') && (
+                            {currentUser.role !== 'Vendor' && isTodayBatch && !hasTransactions && !item.sku?.endsWith('-RET') && !item.sku?.endsWith('-PRET') && (
                               <button 
                                 onClick={() => {
                                   setEditingInventoryItem(item);
