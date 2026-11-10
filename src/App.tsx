@@ -762,6 +762,80 @@ export default function App() {
     }
   };
 
+  const executeCancelPartialReturn = async (targetOrder, targetReturn, stockItemRef) => {
+    if (!targetOrder || !targetReturn) return;
+
+    if (stockItemRef) {
+      const pretSku = `${stockItemRef.sku}-PRET`;
+      const pretItems = items.filter(i => i.sku === pretSku || i.id === targetReturn.itemId + '-PRET');
+      for (const pi of pretItems) {
+        try {
+          await fetch(`${API_BASE_URL}/api/inventory/${pi.id}`, { method: 'DELETE' });
+        } catch (e) {}
+      }
+      setItems(prev => prev.filter(i => i.sku !== pretSku));
+    }
+
+    try {
+      await fetch(`${API_BASE_URL}/api/returns/${targetReturn.id}`, { method: 'DELETE' });
+    } catch (e) {}
+    setReturns(prev => prev.filter(r => r.id !== targetReturn.id));
+
+    let newItemTotal = 0;
+    let itemFound = false;
+
+    const restoredOrderItems = targetOrder.items.map(it => {
+      if (it.itemId === targetReturn.itemId) {
+        itemFound = true;
+        const restoredQty = (Number(it.qty) || 0) + (Number(targetReturn.qty) || 0);
+        newItemTotal += ((Number(it.price) || 0) - (Number(it.discount) || 0)) * restoredQty;
+        return { ...it, qty: restoredQty };
+      } else {
+        newItemTotal += ((Number(it.price) || 0) - (Number(it.discount) || 0)) * it.qty;
+        return it;
+      }
+    });
+
+    if (!itemFound) {
+      const baseItem = items.find(i => i.id === targetReturn.itemId) || stockItemRef;
+      const linePrice = baseItem ? Number(baseItem.price) || 0 : 0;
+      restoredOrderItems.push({
+        itemId: targetReturn.itemId,
+        name: baseItem ? baseItem.name : targetReturn.itemName,
+        qty: Number(targetReturn.qty) || 0,
+        price: linePrice,
+        discount: 0,
+        status: 'Delivered'
+      });
+      newItemTotal += linePrice * (Number(targetReturn.qty) || 0);
+    }
+
+    const newTotalCod = newItemTotal + (Number(targetOrder.deliveryFee) || 0);
+    const remainingReturns = returns.filter(r => r.orderId === targetOrder.id && r.id !== targetReturn.id);
+    const newStatus = remainingReturns.length === 0 ? 'Delivered' : 'Partial Return';
+
+    const updatedOrder = {
+      ...targetOrder,
+      status: newStatus,
+      items: restoredOrderItems,
+      itemTotal: newItemTotal,
+      totalCod: newTotalCod,
+      codCollected: true,
+      updatedBy: currentUser?.name || 'Staff'
+    };
+
+    try {
+      await fetch(`${API_BASE_URL}/api/orders/${targetOrder.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedOrder)
+      });
+    } catch (e) {}
+
+    setOrders(prev => prev.map(o => o.id === targetOrder.id ? updatedOrder : o));
+    addLog(`Cancelled Partial Return for Order ${targetOrder.id} successfully.`);
+  };
+
   const handleCancelInventoryItem = async (item) => {
     const todayDateStr = new Date().toISOString().split('T')[0];
     if (item.stockInDate !== todayDateStr) {
@@ -836,50 +910,19 @@ export default function App() {
             return;
           }
 
-          const targetReturn = returns.find(r => r.itemId === originalStockItem.id && r.type === 'Partial Return');
+          const targetReturn = returns.find(r => 
+            r.type === 'Partial Return' && (
+              (originalStockItem && r.itemId === originalStockItem.id) || 
+              r.itemId === item.id
+            )
+          );
+
           if (targetReturn && targetReturn.orderId) {
             const targetOrder = orders.find(o => o.id === targetReturn.orderId);
             if (targetOrder) {
-              let newItemTotal = 0;
-              const restoredOrderItems = targetOrder.items.map(it => {
-                if (it.itemId === originalStockItem.id) {
-                  const restoredQty = it.qty + targetReturn.qty;
-                  newItemTotal += ((Number(it.price) || 0) - (Number(it.discount) || 0)) * restoredQty;
-                  return { ...it, qty: restoredQty };
-                } else {
-                  newItemTotal += ((Number(it.price) || 0) - (Number(it.discount) || 0)) * it.qty;
-                  return it;
-                }
-              });
-
-              const newTotalCod = newItemTotal + (Number(targetOrder.deliveryFee) || 0);
-              const remainingReturns = returns.filter(r => r.orderId === targetOrder.id && r.id !== targetReturn.id);
-              const newStatus = remainingReturns.length === 0 ? 'Delivered' : 'Partial Return';
-
-              const updatedOrder = {
-                ...targetOrder,
-                status: newStatus,
-                items: restoredOrderItems,
-                itemTotal: newItemTotal,
-                totalCod: newTotalCod,
-                codCollected: true,
-                updatedBy: currentUser?.name || 'Staff'
-              };
-
-              try {
-                await fetch(`${API_BASE_URL}/api/orders/${targetOrder.id}`, {
-                  method: 'PUT',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify(updatedOrder)
-                });
-              } catch (e) {}
-              setOrders(prev => prev.map(o => o.id === targetOrder.id ? updatedOrder : o));
+              await executeCancelPartialReturn(targetOrder, targetReturn, originalStockItem || item);
+              return;
             }
-
-            try {
-              await fetch(`${API_BASE_URL}/api/returns/${targetReturn.id}`, { method: 'DELETE' });
-            } catch (e) {}
-            setReturns(prev => prev.filter(r => r.id !== targetReturn.id));
           }
         }
       }
@@ -916,6 +959,18 @@ export default function App() {
       if (hasVendorReturn) {
         alert('ဤ Partial Return ပစ္စည်းသည် Vendor ထံသို့ Manual Return ပြုလုပ်ပြီးသွားပြီဖြစ်သဖြင့် Cancel (ဖျက်သိမ်း) လုပ်၍ မရတော့ပါ။');
         return;
+      }
+
+      const targetOrder = orders.find(o => o.id === ret.orderId);
+      if (targetOrder) {
+        if (targetOrder.status === 'Delivered') {
+          alert('ဤအော်ဒါ၏ Status မှာ Delivered ဖြစ်သွားပြီဖြစ်သဖြင့် Return ကို Cancel လုပ်၍မရတော့ပါ။');
+          return;
+        }
+        if (confirm(`Return record ${ret.id} ကို Cancel လုပ်မည် သေချာပါသလား?`)) {
+          await executeCancelPartialReturn(targetOrder, ret, baseStockItem);
+          return;
+        }
       }
     }
 
@@ -954,78 +1009,15 @@ export default function App() {
           } catch (e) {}
 
           setOrders(prev => prev.map(o => o.id === targetOrder.id ? updatedOrder : o));
-
-   } else if (targetOrder.status === 'Partial Return') {
-          const targetStockItem = items.find(x => x.id === ret.itemId);
-          
-          // ၁။ Warehouse ထဲက -PRET batch ကို ပြန်ဖြုတ်သည်
-          setItems(prev => prev.filter(i => {
-            if (targetStockItem && i.sku === `${targetStockItem.sku}-PRET`) {
-              return false;
-            }
-            return true;
-          }));
-
-          let newItemTotal = 0;
-          let itemFoundInOrder = false;
-
-          // ၂။ Order ထဲမှာ ရှိပြီးသား item ဖြစ်ရင် Qty ကို တိုက်ရိုက် မပေါင်းတော့ဘဲ 
-          // ဒီ return record ထဲမှာ ပါတဲ့ Qty ပမာဏကို ပေါင်းထည့်ပေးပါ (သို့မဟုတ် မူလ ပမာဏအတိုင်း ချိန်ညှိပါ)
-          const restoredOrderItems = targetOrder.items.map(it => {
-            if (it.itemId === ret.itemId) {
-              itemFoundInOrder = true;
-              // မူလ ကျန်နေတဲ့ qty ပေါ်မှာ ret.qty ကို တခါတည်း တိုက်ရိုက်ပြန်ပေါင်းမယ့်အစား 
-              // (အကယ်၍ နှစ်ခါပေါင်းမိတာကို ရှောင်ရှားရန် တစ်ခါတလေ it.qty မှာ အားလုံးပါပြီးသားဖြစ်နိုင်သည်)
-              // ဒီနေရာမှာ safe ဖြစ်အောင် targetReturn ထဲက qty ကိုပဲ တိတိကျကျ ပြန်ပေါင်းပါ
-              const restoredQty = (Number(it.qty) || 0) + (Number(ret.qty) || 0);
-              newItemTotal += ((Number(it.price) || 0) - (Number(it.discount) || 0)) * restoredQty;
-              return { ...it, qty: restoredQty };
-            } else {
-              newItemTotal += ((Number(it.price) || 0) - (Number(it.discount) || 0)) * it.qty;
-              return it;
-            }
-          });
-
-          // ၃။ အကယ်၍ ပစ္စည်း ၃ ခုလုံး Return လုပ်ထားလို့ Order ထဲမှာ လုံးဝမရှိတော့ဘူးဆိုရင် (itemFoundInOrder က false ဖြစ်နေရင်)
-          if (!itemFoundInOrder) {
-            const stockItemRef = items.find(x => x.id === ret.itemId);
-            if (stockItemRef) {
-              const linePrice = Number(stockItemRef.price) || 0;
-              restoredOrderItems.push({
-                itemId: ret.itemId,
-                name: stockItemRef.name,
-                qty: Number(ret.qty) || 0,
-                price: linePrice,
-                discount: 0,
-                status: 'Delivered'
-              });
-              newItemTotal += linePrice * (Number(ret.qty) || 0);
-            }
+        } else {
+          if (ret.itemId) {
+            setItems(prev => prev.map(i => {
+              if (i.id === ret.itemId) {
+                return { ...i, quantity: (Number(i.quantity) || 0) + (Number(ret.qty) || 0) };
+              }
+              return i;
+            }));
           }
-
-          const newTotalCod = newItemTotal + (Number(targetOrder.deliveryFee) || 0);
-          const remainingReturns = returns.filter(r => r.orderId === targetOrder.id && r.id !== ret.id);
-          const newStatus = remainingReturns.length === 0 ? 'Delivered' : 'Partial Return';
-
-          const updatedOrder = {
-            ...targetOrder,
-            status: newStatus,
-            items: restoredOrderItems,
-            itemTotal: newItemTotal,
-            totalCod: newTotalCod,
-            codCollected: true,
-            updatedBy: currentUser?.name || 'Staff'
-          };
-
-          try {
-            await fetch(`${API_BASE_URL}/api/orders/${targetOrder.id}`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(updatedOrder)
-            });
-          } catch (e) {}
-
-          setOrders(prev => prev.map(o => o.id === targetOrder.id ? updatedOrder : o));
         }
       } else {
         if (ret.itemId) {
