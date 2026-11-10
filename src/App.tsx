@@ -1333,10 +1333,10 @@ export default function App() {
 
     const newTotalCod = newItemTotal + (Number(targetPartialOrder.deliveryFee) || 0);
 
-    const updatedFields = {
+   const updatedFields = {
       ...targetPartialOrder,
       status: 'Partial Return',
-      items: updatedOrderItems.length > 0 ? updatedOrderItems : targetPartialOrder.items,
+      items: updatedOrderItems,
       itemTotal: newItemTotal,
       totalCod: newTotalCod,
       codCollected: true,
